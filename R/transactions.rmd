@@ -1,0 +1,329 @@
+---
+title: "Marketplace Transactions"
+output:
+  html_document:
+    theme: cerulean
+    toc: true
+  pdf_document: default
+  word_document: default
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#source("utilities.r")
+#library(knitr)
+#library(tidyr)
+loglabs <- c("10K","100K","1M","10M")
+#load(paste(substr(as.POSIXct(Sys.time()),1,10),".Rdata",sep=""))
+# load Austender data
+  # version to extract data from a Google Sheet
+  #aus_ws <- gs_title("Austender Data")
+  #sonAll <-  aus_ws %>% gs_read(ws="All")
+  # and regularise it
+  #sonAll$StartDate <- string_to_date(sonAll$Start_Date, format = "%d-%b-%y")
+  #sonAll$EndDate   <- string_to_date(sonAll$End_Date, format = "%d-%b-%y")
+  #sonAll$PublishDate   <- string_to_date(sonAll$Publish_Date, format = "%d-%b-%y")
+sonAll <- contracts
+sonAll <- sonAll[order(sonAll$Publish.Date),]
+sonAll$cumulative_value <- cumsum(sonAll$Value)
+sonAll$cumulative_contracts <- 1:dim(sonAll)[1]
+sonAll$LogValue <- log10(sonAll$Value)
+# add further seller details
+s <- sellers
+#s$abn <- as.numeric(s$abn)
+
+# contracts is now merged with seller information in an earlier function 
+#contracts <- left_join(sonAll,s,by=c("Supplier.ABN" = "abn"))
+
+
+# calcs the coordinates for an AB line to show a linear regression
+abline <- function(coef,start,end) {
+  start = c(start,coef[1]+coef[2]*as.numeric(start))
+  end   = c(end,coef[1]+coef[2]*as.numeric(end))
+  return(data.frame(matrix(c(start,end),nrow=2,ncol=2,byrow=TRUE)))
+}
+
+latest_contract <- max(sonAll$Publish.Date)
+sonDSP <- sonAll[sonAll$SON.ID=="SON3364729",]
+sonDMP <- sonAll[sonAll$SON.ID=="SON3413842",]
+```
+**Latest contract in report: `r latest_contract`**  
+
+
+## Briefs Published by Date  
+```{r, echo=FALSE}
+b <- briefs
+b <- b[order(b$published),]
+b$cumulative_number <- 1:dim(b)[1]
+
+```
+
+
+
+### Briefs and Contracts by Publishing Date    
+<br>  
+```{r echo=FALSE}
+# linear model before and including 23/May
+lm1 <- lm(cumulative_contracts~Publish.Date,
+          data=sonAll[sonAll$Publish.Date<as.Date("2017-05-24"),])
+# linear model after 23/May
+lm2 <- lm(cumulative_contracts~Publish.Date,
+          data=sonAll[sonAll$Publish.Date>as.Date("2017-05-23"),])
+
+# for briefs after 13/Apr
+lm3 <- lm(cumulative_number~published,
+          data=b[b$published>as.Date("2017-04-12"),])
+
+points1 <- abline(lm1$coefficients,as.Date("2016-08-01"),as.Date("2017-09-30"))
+points1$X1 <- as.Date(points1$X1,origin="1970-01-01")
+points2 <- abline(lm2$coefficients,as.Date("2017-03-25"),as.Date("2017-09-30"))
+points2$X1 <- as.Date(points2$X1,origin="1970-01-01")
+points3 <- abline(lm3$coefficients,as.Date("2017-01-01"),as.Date("2017-09-30"))
+points3$X1 <- as.Date(points3$X1,origin="1970-01-01")
+
+
+p <- plot_ly(data=sonAll,x=~Publish.Date,y=~cumulative_contracts,
+             mode="markers",type="scatter",name="contracts")
+p <- p %>% add_markers(data=b,x=~published,y=~cumulative_number,
+                     name="briefs",mode="markers",type="scatter")
+p <- p %>% add_lines(data=points1,x=~X1,y=~X2,mode="line",name="trend line",
+                     line=list(dash='dot'))
+p <- p %>% add_lines(data=points2,x=~X1,y=~X2,mode="line",name="trend line",
+                     line=list(dash='dot'))
+p <- p %>% add_lines(data=points3,x=~X1,y=~X2,mode="line",name="trend line",
+                     line=list(dash='dot'))
+p %>%    layout(title = 'Number of Briefs and Contracts by Published Date',
+                    xaxis = list(title = "Published Date",
+                                 showgrid = TRUE),
+                    yaxis = list(title = "Number",
+                                 showgrid = TRUE))
+
+```
+  
+#### Contracts published per day:  
+
+Contracts published per day | |
+--|--|--      
+Prior to 23/May/17 | <strong>`r round(lm1$coefficients[2],2)`</strong>    
+After 23/May/17 | <strong>`r round(lm2$coefficients[2],2)`</strong>  
+
+  
+### Contract Values      
+<br />    
+
+Contracts | Number | Value  
+--|--|--  
+Total | `r dim(sonAll)[1]` | $`r round(sum(sonAll$Value)/1000000,2)`M |  
+DSPP (SON3364729) | `r dim(sonDSP)[1]` | $`r round(sum(sonDSP$Value)/1000000,2)`M   
+DMP (SON3413842) | `r dim(sonDMP)[1]` | $`r round(sum(sonDMP$Value)/1000000,2)`M  
+<br />   
+
+
+```{r echo=FALSE}
+lm_con <- lm(cumulative_value~Publish.Date,
+             data=sonAll[sonAll$Publish.Date>(Sys.Date()-90),])
+line <- abline(lm_con$coefficients,as.Date("2017-03-01"),as.Date("2017-12-31"))
+line$X1 <- as.Date(line$X1,origin="1970-01-01")
+p <- plot_ly()
+points <- subset(sonAll,SON.ID=="SON3413842")
+p <- p %>% add_trace(data=points,x=~Publish.Date,y=~cumulative_value,
+                     type="scatter",mode="markers",name="Marketplace Panel",
+                     marker=list(size=5))
+points <- subset(sonAll,SON.ID=="SON3364729")
+p <- p %>% add_trace(data=points,x=~Publish.Date,y=~cumulative_value,
+                     type="scatter",mode="markers",name="DSPP",
+                     marker=list(size=5))
+
+p <- p %>% add_lines(data=line,x=~X1,y=~X2,
+                     name="trend line",
+                    line=list(dash='dot'))
+p <- p %>% layout(title = 'Contracts published by Standing Offer',
+                    xaxis = list(title = "Published Date",
+                                 showgrid = TRUE),
+                    yaxis = list(title = "Value ($)",
+                                 showgrid = TRUE))
+p
+```
+
+
+<br>  
+```{r, echo=FALSE}
+# cumulative value by SME
+cbd <- datesSinceLaunch()
+# sums or counts all values up to and including the refdate
+cumulation <- function(refdate,dates,values,type = "sum") {
+  if (type=="sum") {
+    return(round(sum(values[dates <= refdate])/1000000,2))
+  }
+  return(length(values[dates <= refdate]))
+}
+c <- contracts
+cbd$cum_value  <- sapply(cbd$dates,cumulation,c$Publish.Date,c$Value)
+cbd$cum_number <- sapply(cbd$dates,cumulation,c$Publish.Date,c$Value,"length")
+c <- contracts[contracts$sme_by_employees,]
+cbd$cum_sme_value  <- sapply(cbd$dates,cumulation,c$Publish.Date,c$Value)
+cbd$cum_sme_number <- sapply(cbd$dates,cumulation,c$Publish.Date,c$Value,"length")
+c <- contracts[!contracts$sme_by_employees,]
+cbd$cum_e_value  <- sapply(cbd$dates,cumulation,c$Publish.Date,c$Value)
+cbd$cum_e_number <- sapply(cbd$dates,cumulation,c$Publish.Date,c$Value,"length")
+
+plot_ly(cbd, x= ~dates, y = ~cum_value, name = 'SME', type='scatter',
+        mode= 'non', fill = 'tozeroy', hoverinfo= 'text',
+        text = ~paste(date_to_string(cbd$dates),
+                       "<br />SME -<br />Contracts: ",cbd$cum_sme_number,
+                      "<br />Value: $",cbd$cum_sme_value,
+                       "M<br />Of total -<br />Contracts: ",
+                       cbd$cum_number,
+                       "<br />Value: $",cbd$cum_value,"M")) %>% 
+  add_trace(y = ~cum_e_value, name='Enterprise', 
+            text = ~paste(date_to_string(cbd$dates),
+                       "<br />Enterprise -<br />Contracts: ",cbd$cum_e_number,
+                      "<br />Value: $",cbd$cum_e_value,
+                       "M<br />Of total -<br />Contracts: ",
+                       cbd$cum_number,
+                       "<br />Value: $",cbd$cum_value,"M")) %>% 
+  layout(title = 'Contracts published by seller type',
+         xaxis = list(title = "Published Date",
+                      showgrid = TRUE),
+         yaxis = list(title = "Cumulative Contract Value ($M)",
+                      showgrid = TRUE))
+
+
+```
+<br>  
+```{r, echo=FALSE}
+plot_ly(data=sonAll,x=~Publish.Date,y=~LogValue,
+        color=~SON.ID,colors=c("red","blue"),
+        type="scatter",mode="markers") %>%
+  layout(title = 'Value of Individual Contracts on Austender',
+                    xaxis = list(title = "Published Date",
+                                 showgrid = TRUE),
+                    yaxis = list(title = "Value ($)",
+                                 ticktext = loglabs,
+                                 tickvals=c(4,5,6,7),
+                                 showgrid = TRUE))
+
+```
+  
+<br>   
+```{r, echo=FALSE}
+vals3364729 <- sonAll[sonAll$SON.ID=="SON3364729",]$LogValue
+dens3364729 <- density(vals3364729)
+dens3364729$y <- dens3364729$y * 0.2
+vals3413842 <- sonAll[sonAll$SON.ID=="SON3413842",]$LogValue
+dens3413842 <- density(vals3413842)
+  dens3413842$y <- dens3413842$y * 0.2
+
+p <- plot_ly(alpha = 0.6) %>%
+  add_histogram(x = vals3364729,name="DSPP contracts",nbinsx=20,histnorm="probability") %>%
+  add_histogram(x = vals3413842,name="DMP contracts",nbinsx=20,histnorm="probability") %>%
+  add_lines(x=~dens3364729$x,y=dens3364729$y,name="DSPP smoothed") %>%
+  add_lines(x=~dens3413842$x,y=dens3413842$y,name="DMP smoothed") %>%
+  layout(barmode = "overlay",
+         title = "Number of Contracts by Value",
+         xaxis = list(title = "Value ($)",ticktext = loglabs, tickvals=c(4,5,6,7),
+                                 showgrid = TRUE),
+                    yaxis = list(title = "Proportion of contracts",
+                                 showgrid = TRUE))
+p
+
+```
+
+```{r, echo=FALSE}
+pubRate <- round(lm3$coefficients[2],2)
+dmpVals <- sonAll[sonAll$SON.ID=="SON3413842",]$Value
+avVal   <- round(mean(dmpVals)/1000,1)
+medVal   <- round(median(dmpVals)/1000,1)
+proj    <- round((avVal*1000 * lm2$coefficients[2] * 365)/1000000)
+```
+
+Current Values for Digital Marketplace Panel  | Value     
+--|--  
+Current contract publishing rate | `r round(lm2$coefficients[2],2)` contracts per day  
+Average value per contract       | $`r avVal`K  
+Median value per contract        | $`r medVal`K  
+Projected annual value           | $`r proj`M  
+
+  
+## Sellers  
+  
+```{r, echo=FALSE}
+#s <- sellers
+#s$abn <- as.numeric(s$abn)
+#contracts <- left_join(sonAll,s,by=c("Supplier_ABN" = "abn"))
+sme_badge <- contracts %>% group_by(sme_badge) %>% summarise(value = sum(Value),count = length(sme_badge))
+sme_badge$percent_value <- round(sme_badge$value / sum(sme_badge$value) * 100)
+sme_badge$percent_count <- round(sme_badge$count / sum(sme_badge$count) * 100)
+#sme_badge <- bind_rows(sme_badge,c("Total",sum(sme_badge$value),sum(sme_badge$count),sum(sme_badge$percent_value),sum(sme_badge$percent_count)))
+sme_emps  <- contracts %>% group_by(sme_by_employees) %>% summarise(value = sum(Value), count = length(sme_by_employees))
+sme_emps$percent_value <- round(sme_emps$value / sum(sme_emps$value) * 100)
+sme_emps$percent_count <- round(sme_emps$count / sum(sme_emps$count) * 100)
+
+```
+### Contracts by Seller  
+```{r, echo=FALSE}
+cbs <- contracts %>% group_by(Supplier.ABN,name,sme_badge,is_recruiter,code) %>%
+  summarise(number_contracts = length(Supplier.ABN),
+            total = sum(Value),
+            max=max(Value),
+            min=min(Value),
+            average=mean(Value)
+            ) %>%
+  arrange(desc(number_contracts))
+app_counts <- briefResponses %>%
+    group_by(supplierId, supplierName) %>%
+    summarise(count = length(applicationDate)) %>%
+    arrange(desc(count))
+merged <- merge(cbs,app_counts,by.x="code",by.y="supplierId",all.y=TRUE) %>% 
+  arrange(desc(count))
+merged[is.na(merged)] <- 0
+merged$index <- 1:dim(merged)[1]
+merged$has_contracts <- merged$number_contracts > 0
+plot_ly(data=merged,x=~index,y=~count,type="scatter",
+        mode="markers",name="brief applications",marker=list(size=4),
+        text = paste(merged$supplierName,
+                     "<br />Applications: ",merged$count,
+                     "<br />Contracts: ",merged$number_contracts
+                       )) %>% 
+  add_trace(x=~index,y=~number_contracts,mode="markers",name="contracts",
+        text = paste(merged$supplierName,
+                     "<br />Applications: ",merged$count,
+                     "<br />Contracts: ",merged$number_contracts
+                       )) %>% 
+  layout(title="Counts of brief applications and reported contracts",
+         xaxis=list(title=""))  
+```
+  
+  
+#### Top ten sellers by number of contracts    
+`r kable(cbs[1:10,])`  
+  
+#### Contracts versus Brief Applications  
+```{r, echo=FALSE}
+x11 <- dim(sellers)[1]
+x12 <- 100
+x21 <- dim(app_counts)[1]
+x22 <- round(x21 / x11 * 100)
+x31 <- dim(cbs)[1]
+x32 <- round(x31/x11 * 100)
+x41 <- dim(sellers[sellers$dmp_framework&nchar(sellers$assessed_aoe) > 1,])[1]
+x42 <- round(x41/x11 * 100)
+```
+
+Figure | number | percentage  
+--|--|--    
+Registered sellers in the Marketplace | `r x11` | `r x12`  
+Sellers who've applied for briefs | `r x21` |  `r x22` 
+Sellers awarded contracts | `r x31` |  `r x32`  
+Number of active sellers | `r x41` | `r x42`   
+
+### By SME Badge
+`r kable(sme_badge)`  
+  
+### By Declared Number of Employees  
+`r kable(sme_emps)`
+
+
+
+

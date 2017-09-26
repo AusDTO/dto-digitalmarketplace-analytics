@@ -1,0 +1,426 @@
+---
+title: "Snapshot"
+output:
+  html_document:
+    theme: cerulean
+    toc: true
+  pdf_document: default
+  word_document: default
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r,include=FALSE}
+# if rendered in a new R session, load the session values
+if (!exists("buyers")) {
+  source("utilities.r")
+  source("plotly_functions.r")
+  library(knitr)
+  library(tidyr)
+  library(RColorBrewer)
+  library(dplyr)
+  library(plotly)
+  ## load the files - ensure these files are already produced
+  load(paste0(getwd(),"/../data/",substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
+}
+
+# filter inactive buyers
+buyers <- buyers[buyers$active==TRUE,]
+buyers <- buyers[!grepl("\\+",buyers$email_address),]
+
+```
+**run date: `r date_to_string(Sys.Date())`**  
+  
+
+---   
+
+## Current briefs  
+  
+  
+### Currently Live  
+```{r echo=FALSE}
+bl <- briefs[briefs$status=="live",] # 
+bl$closes <- string_to_date(bl$published) + 7
+bl[bl$duration=="2 weeks","closes"] <- bl[bl$duration=="2 weeks","closes"] + 7.5
+bl <- bl[,c("id","title","organisation","openTo","type","closes")]
+b_apps <- briefResponses[!is.na(briefResponses$applicationId),] %>% 
+  group_by(id) %>% 
+  summarise(applications = length(id))
+bl <- merge(bl,b_apps,by.x="id",by.y="id",all.x=TRUE) %>% arrange(closes)
+bl[is.na(bl)] <- 0
+bl$closes     <- date_to_string(bl$closes)
+#bl <- bl[order(bl$closes),]
+```
+`r kable(bl,row.names=FALSE)`  
+  
+### Recently Closed  
+```{r echo=FALSE}
+brc <- briefs[briefs$status=="closed"
+                     &(Sys.Date() - string_to_date(briefs$published)) < 30,] 
+brc$brief_closed <- string_to_date(brc$published) + 7
+brc[brc$duration=="2 weeks","brief_closed"] <- 
+                    brc[brc$duration=="2 weeks","brief_closed"] + 7.5
+brc <- brc[,c("id","title","organisation","openTo","type","published","brief_closed")]
+brc <- merge(brc,b_apps,by.x="id",by.y="id",all.x=TRUE)
+brc <- brc[order(brc$brief_closed,decreasing=TRUE),]
+brc$brief_closed <- date_to_string(brc$brief_closed)
+brc[is.na(brc)] <- 0
+```
+`r kable(brc,row.names=FALSE)`  
+  
+---  
+
+## Buyers  
+  
+### Buyer and Agency Counts  
+  
+  
+```{r echo=FALSE}
+plot_buyer_counts(buyers,publish=FALSE) 
+agencies <- buyers %>%
+                group_by(category) %>% 
+                summarise(count=length(category))  
+agencies$percent <- round(agencies$count/sum(agencies$count) * 100,digits=1)
+agencies <- rbind(agencies,c("Total buyers",sum(agencies$count),100.0))
+```  
+  
+* Active buyers have signed in or registered in the past 90 days
+
+  
+### Buyer Counts by Agency Category  
+`r kable(agencies)`  
+  
+`r plot_buyer_count_by_agency_category(buyers)`  
+  
+
+  
+### Agency Counts by Category  
+```{r echo=FALSE}
+agencies_counts <- buyers %>%
+                group_by(email_domain,category) %>% 
+                summarise(count=length(email_domain)) %>%
+                group_by(category) %>%
+                summarise(count = length(category))
+agencies_counts$percent <- round(agencies_counts$count/sum(agencies_counts$count) * 100,digits=1)
+agencies_counts <- rbind(agencies_counts,c("Total agencies",sum(agencies_counts$count),100.0))
+
+```
+`r kable(agencies_counts)`     
+  
+`r plot_agency_count_by_category(buyers)`    
+
+---   
+
+## Briefs  
+
+### Published briefs
+```{r echo=FALSE}
+#b <- briefs[!duplicated(briefs[,c("id"),]),]
+b <- briefs
+b <- b[b$id > 0,]
+b_counts <- b %>% 
+  group_by(category) %>%
+  summarise(count = length(category))
+b_counts$percentage <- round(b_counts$count/sum(b_counts$count)*100)
+b_counts <- rbind(b_counts,c("Total",sum(b_counts$count),100))
+```
+`r kable(b_counts)`  
+  
+#### Number of Briefs Published Since Launch  
+`r plot_briefs_published(briefs)`  
+  
+### Responses for Specialist Briefs  
+```{r, echo=FALSE}
+# violin plots by area of expertise
+vals <- briefResponses %>% filter(!is.na(areaOfExpertise),
+                                  !is.na(dayRate),
+                                  dayRate > 400,dayRate < 4000)
+add_density_plot <- function(p,bR,i,color) {
+#  dens <- density(bR$dayRate,na.rm=TRUE,from=(min(bR$dayRate)-100))
+  dens <- density(bR$dayRate,na.rm=TRUE)
+  up   <- dens$y/max(dens$y) + (i*3 + 2)
+  down <- (i*3 + 2) - dens$y/max(dens$y)
+  n    <- bR[1,"areaOfExpertise"]
+  p <- p %>% add_lines(x=dens$x,y=up,mode="line",color=color,name=n)
+  p %>% add_lines(x=dens$x,y=down,mode="line",color=color,
+                  fill = "tonexty",
+                  showlegend=FALSE)
+}
+
+resps <- vals %>% group_by(areaOfExpertise) %>% 
+  summarise(number_of_briefs = length(unique(id)), 
+            number_of_responses = length(applicationId))
+
+areas <- data.frame(areaOfExpertise=unique(vals$areaOfExpertise))
+doms  <- data.frame(areaOfExpertise= domains)
+resps <- merge(resps,doms,all.y=TRUE)
+resps[is.na(resps)] <- 0
+names(resps) <- c("Area of Expertise","Number of Briefs","Number of Responses")
+all_dens <- density(vals$dayRate,na.rm=TRUE)
+up       <- all_dens$y/max(all_dens$y) + 2
+down     <- 2 - all_dens$y/max(all_dens$y)
+p <- plot_ly(x=all_dens$x,y=up,
+             type="scatter",
+             mode="lines",
+             name="All areas",
+             color=brewer.pal(10,"Paired")[1])
+p <- p %>% add_lines(x=all_dens$x,y=down,mode="line",
+                     color=brewer.pal(10,"Paired")[1],
+                     fill = "tonexty",
+                     showlegend=FALSE)
+areas <- as.character(resps[resps$`Number of Responses`>10,]$`Area of Expertise`)
+for (i in 1:length(areas)) {
+#  if (resps[resps$areaOfExpertise==areas[i],]$number_of_responses > 9) {
+    p <- add_density_plot(p,
+                          vals[vals$areaOfExpertise==areas[i],],
+                          i,
+                          brewer.pal(10,"Paired")[i+1])
+#  }
+}
+p <- p %>% layout(xaxis=list(range=c(0,3000),
+                             title="Day Rate ($ incl GST)", showaxis=FALSE),
+                  yaxis=list(showticklabels=FALSE,
+                             showgrid=FALSE,
+                             showline=FALSE),
+                  #legend = list(orientation = 'h')
+                  showlegend=FALSE)
+                   #title="Distribution of Day Rates for Specialist Briefs")
+# annotations
+y_s   <- c(2,1:length(areas) * 3 + 2) + 0.6
+areas <- c("All areas",areas)
+p <- p %>% add_annotations(  
+  x = rep(2500,length(areas)),
+  y = y_s,
+  showarrow=FALSE,
+  text = areas
+)
+
+```  
+  
+  
+#### Number of Specialist Briefs and Responses Since Launch  
+`r kable(resps)`  
+<br>  
+  
+#### Bids for Open to All Specialist Briefs  
+`r plot_bids_by_specialist_brief(briefResponses)`  
+<br>  
+  
+#### Distribution of bids for Specialist Briefs by domain  
+`r p`
+<br>   
+
+#### Applications per brief for Open to All  
+<br>  
+
+```{r,echo=FALSE}
+x <- briefResponses %>% filter(openTo=="All") %>% group_by(id) %>% summarise(responses = length(id))
+dens <- density(x$responses,from=0)
+dens$y <- dens$y / (max(dens$y)) * 20
+plot_ly(x=x$responses,type="histogram",name="histogram") %>% 
+  add_lines(x=dens$x,y=dens$y,name="smoothed") %>%
+  layout(title="Seller Applications per Brief",xaxis=list(title="Applications"),
+         yaxis=list(title="Count"))
+```
+<br>  
+Summary figures:  
+
+Min. | 1st Quartile | Median | Mean | 3rd Quartile | Max.  
+--|--|--|--|--|--  
+`r paste(paste(summary(x$responses),collapse = " | "),"  ")`  
+
+      
+### Publishing Agencies  
+```{r echo=FALSE}
+b <- briefs[briefs$id > 0,c("id","organisation","buyerEmail")]
+b <- b[!duplicated(b$id),]
+b$domain <- matrix(unlist(strsplit(b$buyerEmail,"@")),ncol=2,byrow=TRUE)[,2]
+counts <- b %>% group_by(domain) %>%
+  summarise(count = length(id), agency = organisation[1]) %>%
+  arrange(desc(count))
+counts$domain <- factor(counts$domain,levels=counts$domain) 
+#plot_ly(counts,x=~count,y=~domain,type="bar",orientation='h') %>%
+#  layout(yaxis = list(title = #'',tickfont=list(color="darkblue"),font='arial',size=12),
+#         xaxis = list(title = ''),
+#         autosize=F,
+#         width=1000,
+#         height=1000,
+#         margin = list(l = 200, r = 10, t = 10, b = 20))
+
+```
+   
+   
+**Total publishing agencies `r dim(counts)[1]`**    
+  
+  
+`r kable(counts)`   
+
+---  
+  
+## Sellers  
+  
+### Seller Activity  
+`r plot_application_counts_by_seller(briefResponses)`  
+<br>  
+```{r, echo=FALSE}
+sellers$applied <- sellers$code %in% briefResponses$supplierId
+sellers$status  <- "registered"
+sellers[nchar(sellers$assessed_aoe) > 1,]$status  <- "active"
+sellers[nchar(sellers$legacy_aoe) > 1 & sellers$dmp_framework,]$status  <- "upgraded"
+sellers[!sellers$dmp_framework,]$status <- "legacy"
+counts <- sellers %>% group_by(status, applied) %>% summarise(count =  length(applied))
+as        <- sum(counts[counts$status %in% c("active","upgraded"),"count"])
+asApplied <- sum(counts[counts$status %in% c("active","upgraded")&counts$applied,"count"])
+asperc <- round(asApplied/(as)*100)
+```
+| | |
+--|--
+Total number of active sellers                 | `r as`  
+Active sellers who've applied for any briefs   | `r asApplied`  
+% active sellers who've applied for any brief  | `r asperc`  
+Registered sellers | `r sum(counts[counts$status=="registered","count"])`  
+
+  
+```{r echo=FALSE}
+a <- apps[apps$type %in% c("new","upgrade")&apps$status=="submitted",]
+a$days_since_sub <- as.numeric(Sys.Date() - a$submitted_at_date)
+
+dsppSU <- with(apps,sum(type %in% c("new","upgrade")&apps$status=="submitted"&type=="upgrade"))
+dsppST <- with(apps,sum(type %in% c("new","upgrade")&apps$status%in%c("saved","reverted")&type=="upgrade"))
+dsppNS <- sum(is.na(sellers$application_id)&!sellers$dmp_framework)
+dsppAP <- with(sellers,sum(nchar(legacy_aoe)>1&dmp_framework))
+dmpPROD <- with(sellers,sum(nchar(legacy_aoe)<2&product_only))
+dmpASS  <- with(sellers,sum(dmp_framework&nchar(assessed_aoe)>1&nchar(legacy_aoe)<2&!product_only))
+dmpREG <- with(sellers,sum(dmp_framework&nchar(assessed_aoe)<2&nchar(legacy_aoe)<2&!product_only))
+totes <- dsppAP+dsppNS+dsppST+dsppSU + dmpASS+dmpPROD+dmpREG
+```
+
+### Seller counts  
+  
+```{r,echo=FALSE}
+s <- sellers %>% 
+  #filter(dmp_framework) %>% 
+  arrange(joined) %>% 
+  mutate(number = 1:length(joined))
+plot_ly(s,x=~joined,y=~number,type="scatter",mode="lines") %>%
+    layout(title="Number of registered sellers over time",
+           xaxis=list(title=""),
+           yaxis=list(title="Count"))
+
+
+```
+  
+Shows all sellers who are *currently on the Marketplace* based on when they were added as a seller. Note that this shows registered sellers, not all of these will be active.  
+  
+  
+### Seller composition  
+  
+#### Category counts  
+```{r,echo=FALSE}
+aoes <- sapply(domains,function(x,s) {
+        sum(grepl(x,s$assessed_aoe))
+       },s = sellers)
+aoes_un <- sapply(domains,function(x,s) {
+        sum(grepl(x,s$unassessed_aoe))
+       },s = sellers)
+aoe_df <- data.frame(domains,aoes,aoes_un)
+#aoe_df <- aoe_df %>% arrange(aoes)
+plot_ly(aoe_df,x=~domains,y=~aoes,name="Assessed",type="bar") %>%
+  add_trace(y=~aoes_un,name="Not yet assessed") %>%
+  layout(yaxis = list(title = 'Seller count by Area of Expertise'),
+         xaxis = list(title = ""), 
+         barmode = 'stack')
+```
+
+  
+#### Registered Sellers  
+  
+| buyer type and status | number |  
+|--|--|  
+| DSPP not started | `r dsppNS` |  
+| DSPP started | `r dsppST` |  
+| DSPP submitted | `r dsppSU` |  
+| DSPP approved | `r dsppAP` |  
+| * DSPP subtotal * | * `r sum(dsppNS,dsppST,dsppSU+dsppAP) ` * |
+| DMP registered | `r dmpREG` |  
+| DMP active | `r dmpASS` |  
+| DMP product only | `r dmpPROD` |  
+| * DMP (new sellers) subtotal * | * `r sum(dmpREG,dmpASS,dmpPROD) ` * |
+| Total of the above | `r totes` |  
+| Cross check (should equal the 'Total of the above') | `r dim(sellers)[1]` |  
+  
+#### Applications  
+  
+```{r echo=FALSE}
+ipREV <- with(apps,sum(status=="reverted"))
+ipABN <- with(apps,sum(status=="saved"&!is.na(abn)&grepl("\\d",abn)))
+ipNO_ABN <- with(apps,sum(is.na(abn)) + sum(!is.na(abn)&!grepl("\\d",abn)))
+rejected <- with(apps,sum(status=="assessment_rejected"))
+```  
+| Applicant status | number |  
+|--|--|  
+| Submitted, awaiting assessment | `r sum(a$type=="new")`|  
+| In progress - reverted | `r ipREV` |  
+| In progress - not yet submitted, has entered ABN | `r ipABN`|  
+| In progress - not yet submitted, has not entered ABN | `r ipNO_ABN`|  
+| Rejected outright | `r rejected` |  
+  
+
+---  
+
+## Applications  
+  
+---  
+
+## Operations  
+  
+### Domain assessments  
+
+  
+### New seller assessments
+
+```{r echo=FALSE}
+#a[is.na(a$days_since_sub),]$days_since_sub <- 0
+xmax <- max(a[a$type %in% c("new","upgrade"),]$days_since_sub)
+xbins <- list(start=1,end=xmax,size=1)
+p <- plot_ly(x = a[a$type=="new","days_since_sub"],type="histogram",name="new",xbins=xbins)
+#if (length(a[a$type=="new","days_since_sub"])>0) {
+##  p <- add_histogram(p,x = a[a$type=="new","days_since_sub"],name="new",xbins=xbins) 
+#}
+if (length(a[a$type=="upgrade","days_since_sub"]) > 0) {
+  p <- add_histogram(p,a[a$type=="upgrade","days_since_sub"],name="upgrade",xbins=xbins)
+} 
+p <- layout(p,barmode="overlay",
+         title = 'Unassessed Application or Upgrades',
+           xaxis = list(title = "days since submission",
+                        showgrid = TRUE),
+           yaxis = list(title = "number of submissions",
+                        showgrid = TRUE))
+p
+```
+
+     
+  
+| Total of | Count |
+|---|---|  
+| New applications not yet assessed | `r sum(a$type=="new")` |  
+| Upgrades not yet assessed | `r sum(a$type=="upgrade")` |  
+
+### Seller edits
+```{r echo=FALSE}
+a <- apps[apps$type=="edit"&apps$status=="submitted",]
+a$days_since_sub <- as.numeric(Sys.Date() - a$submitted_at_date)
+plot_ly(x=a$days_since_sub,type="histogram",nbinsx=20) %>% 
+  layout(barmode="overlay",
+         title = 'Unassessed Edit Requests',
+           xaxis = list(title = "days since submission",
+                        showgrid = TRUE),
+           yaxis = list(title = "number of submissions",
+                        showgrid = TRUE))
+
+```
+  
+
+

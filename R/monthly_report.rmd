@@ -1,0 +1,210 @@
+---
+title: "Monthly Reports Data Summary"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+start <- as.Date("2017-09-11")
+end   <- as.Date("2017-09-26")
+fy_start <- as.Date("2017-07-01")
+reference_file <- "..\\data\\2017-09-19.Rdata"
+
+# if rendered in a new R session, load the session values
+if (!exists("buyers")) {
+  source("utilities.r")
+  source("plotly_functions.r")
+  library(knitr)
+  library(tidyr)
+  library(RColorBrewer)
+  library(dplyr)
+  library(plotly)
+  ## load the files - ensure these files are already produced
+  #load(paste0(getwd(),"/../data/",substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
+  load(reference_file)
+}
+
+
+```  
+Date range for report:  
+Starts `r start`  
+Ends `r end`  
+Current financial year: `r fy_start`  
+  
+## Registered Entities  
+  
+```{r,echo=FALSE}
+agencies_counts <- buyers %>%
+                group_by(email_domain,category) %>% 
+                summarise(count=length(email_domain)) %>%
+                group_by(category) %>%
+                summarise(count = length(category))
+agencies_counts$percent <- round(agencies_counts$count/sum(agencies_counts$count) * 100,digits=1)
+agencies_counts <- rbind(agencies_counts,c("Total agencies",sum(agencies_counts$count),100.0))
+
+```  
+
+`r kable(agencies_counts)`     
+  
+# Top buyers in month  
+
+```{r,echo=FALSE}
+buyer_counts <- briefs %>%
+  filter(published >= start,published <= end) %>%
+  group_by(agencyName) %>%
+  summarise(count=length(agencyName)) %>%
+  arrange(desc(count))
+```
+
+`r kable(buyer_counts)`     
+  
+# How are we encouraging competition  
+
+```{r,echo=FALSE}
+# sme figures
+#m_contracts <- left_join(contracts,sellers,by=c("Supplier.ABN" = "abn"))
+m_contracts <- contracts
+
+sme_emps  <- m_contracts %>% 
+  filter(Publish.Date <= end) %>%
+  group_by(sme_by_employees) %>% 
+  summarise(value = sum(Value), count = length(sme_by_employees))
+sme_emps$by_value <- sme_emps$value / sum(sme_emps$value) * 100
+sme_emps$by_count <- sme_emps$count / sum(sme_emps$count) * 100
+```
+
+`r kable(sme_emps)`  
+  
+## Contract values  
+
+```{r,echo=FALSE}
+m_contracts <- contracts %>%
+  filter(Publish.Date <= end)
+total_value <- sum(m_contracts$Value)
+total_contracts <- dim(m_contracts)[1]
+
+m_contracts <- m_contracts %>%
+  filter(Publish.Date >= start)
+monthly_value <- sum(m_contracts$Value)
+monthly_contracts <- dim(m_contracts)[1]
+
+```
+   
+Total value of contracts  = $`r total_value`  
+Total number of contracts = `r total_contracts`   
+Monthly value of contracts = $`r monthly_value`  
+Monthly number of contracts = `r monthly_contracts`  
+
+  
+## Sellers  
+```{r,echo=FALSE}
+m_sellers <- sellers %>%
+  filter(joined <= end)
+total_sellers <- dim(m_sellers)[1]
+
+m_sellers <- m_sellers %>%
+  filter(joined >= start)
+monthly_sellers <- dim(m_sellers)[1]
+```
+  
+Total sellers = `r total_sellers`  
+Sellers joining in month = `r monthly_sellers`  
+  
+## Published briefs  
+```{r,echo=FALSE}
+m_briefs <- briefs %>%
+  filter(published <= end)
+total_briefs <- dim(m_briefs)[1]
+
+open_to_selected <- m_briefs %>%
+  group_by(openTo) %>%
+  summarise(count = length(openTo))
+open_to_selected$perc <- open_to_selected$count / sum(open_to_selected$count) * 100
+
+type_counts <- m_briefs %>%
+  group_by(type) %>%
+  summarise(count = length(type))
+type_counts$perc <- type_counts$count / sum(type_counts$count) * 100
+
+m_briefs <- m_briefs %>%
+  filter(published >= start)
+monthly_briefs <- dim(m_briefs)[1]
+```
+  
+Total briefs = `r total_briefs`  
+Monthly briefs = `r monthly_briefs`  
+  
+Open to:  
+`r kable(open_to_selected)`  
+  
+Brief type:  
+`r kable(type_counts)`  
+  
+## Types of briefs  
+Total briefs in each category since launch
+
+```{r,echo=FALSE}
+aoe_counts <- briefs %>%
+  filter(published <= end, type=="Specialist") %>%
+  group_by(areaOfExpertise) %>%
+  summarise(count = length(areaOfExpertise)) %>%
+  arrange(desc(count))
+aoe_counts$areaOfExpertise <- as.character(aoe_counts$areaOfExpertise)
+# sum of counts excluding the top 4 
+sum_others <- sum(aoe_counts[5:dim(aoe_counts)[1],]$count)
+# number of Outcomes
+outcome_count <- briefs %>%
+    filter(published <= end, type=="Outcome") %>%
+    dim
+aoe_counts <- rbind(aoe_counts,
+                        c("Total others (all but top 4 specialist)",sum_others))
+aoe_counts <- rbind(aoe_counts,
+                    c("Total Outcomes",outcome_count))
+```
+`r kable(aoe_counts)`  
+  
+## Areas of expertise offered  
+
+  
+```{r,echo=FALSE}
+m_s   <- sellers %>%
+  filter(joined < end)
+aoes <- sapply(domains,function(x,s) {
+        sum(grepl(x,s$assessed_aoe))
+       },s = m_s)
+aoes_un <- sapply(domains,function(x,s) {
+        sum(grepl(x,s$unassessed_aoe))
+       },s = m_s)
+aoes <- aoes + aoes_un
+aoe_df <- data.frame(count=aoes)
+```
+
+`r kable(aoe_df)`  
+
+## Contracts by seller  
+
+```{r,echo=FALSE}
+m_c <- contracts %>%
+  filter(Publish.Date <= end, Publish.Date >= fy_start)
+fy_contracts <- m_c %>%
+  group_by(Supplier.ABN) %>%
+  summarise(value = sum(Value),count=length(Supplier.ABN))
+fy_contracts <- merge(fy_contracts,sellers[,c("abn","name","sme_by_employees")],
+                      by.x="Supplier.ABN",by.y="abn",all.x=TRUE) %>%
+  arrange(desc(count),desc(value))
+fy_others <- fy_contracts[11:dim(fy_contracts)[1],] %>%
+  group_by(sme_by_employees) %>%
+  summarise(value = sum(value),count = sum(count))
+
+  
+```
+### Current financial year  
+#### Top ten sellers
+`r kable(fy_contracts[1:10,])`  
+#### Count of 'others' - excludes the top 10 sellers  
+`r kable(fy_others)`  
+
+
+
+
+
