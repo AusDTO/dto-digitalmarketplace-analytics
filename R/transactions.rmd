@@ -57,6 +57,14 @@ b <- briefs
 b <- b[order(b$published),]
 b$cumulative_number <- 1:dim(b)[1]
 
+b <- briefs %>%
+  mutate(ncce=(entities=="NCCE")) %>%
+  group_by(ncce,published) %>%
+  arrange(published) %>%
+  summarise(count = length(ncce)) %>%
+  mutate(cumulative_number = cumsum(count)) %>%
+  arrange(published)
+
 ```
 
 
@@ -73,25 +81,36 @@ lm2 <- lm(cumulative_contracts~Publish.Date,
 
 # for briefs after 13/Apr
 lm3 <- lm(cumulative_number~published,
-          data=b[b$published>as.Date("2017-04-12"),])
+          data=b[b$published>as.Date("2017-04-12")&b$ncce,])
+
+# briefs in the last 30 days
+lm4 <- lm(cumulative_number~published,
+          data=b[b$published>(Sys.Date()-31)&b$ncce,])
 
 points1 <- abline(lm1$coefficients,as.Date("2016-08-01"),as.Date("2017-09-30"))
 points1$X1 <- as.Date(points1$X1,origin="1970-01-01")
-points2 <- abline(lm2$coefficients,as.Date("2017-03-25"),as.Date("2017-09-30"))
+points2 <- abline(lm2$coefficients,as.Date("2017-03-25"),as.Date("2017-12-31"))
 points2$X1 <- as.Date(points2$X1,origin="1970-01-01")
-points3 <- abline(lm3$coefficients,as.Date("2017-01-01"),as.Date("2017-09-30"))
+points3 <- abline(lm3$coefficients,as.Date("2017-01-01"),as.Date("2017-12-31"))
 points3$X1 <- as.Date(points3$X1,origin="1970-01-01")
-
+points4 <- abline(lm4$coefficients,Sys.Date()-45,Sys.Date()+15)
+points4$X1 <- as.Date(points4$X1,origin="1970-01-01")
 
 p <- plot_ly(data=sonAll,x=~Publish.Date,y=~cumulative_contracts,
              mode="markers",type="scatter",name="contracts")
-p <- p %>% add_markers(data=b,x=~published,y=~cumulative_number,
-                     name="briefs",mode="markers",type="scatter")
-p <- p %>% add_lines(data=points1,x=~X1,y=~X2,mode="line",name="trend line",
-                     line=list(dash='dot'))
+b_t <- b[b$ncce,]
+p <- p %>% add_markers(data=b_t,x=~published,y=~cumulative_number,
+                       mode="markers",type="scatter",name="NCCE briefs")
+b_t <- b[!b$ncce,]
+p <- p %>% add_markers(data=b_t,x=~published,y=~cumulative_number,
+                       mode="markers",type="scatter",name="Non-NCCE briefs")
+#p <- p %>% add_lines(data=points1,x=~X1,y=~X2,mode="line",name="trend line",
+#                     line=list(dash='dot'))
 p <- p %>% add_lines(data=points2,x=~X1,y=~X2,mode="line",name="trend line",
                      line=list(dash='dot'))
 p <- p %>% add_lines(data=points3,x=~X1,y=~X2,mode="line",name="trend line",
+                     line=list(dash='dot'))
+p <- p %>% add_lines(data=points4,x=~X1,y=~X2,mode="line",name="last 30 days",
                      line=list(dash='dot'))
 p %>%    layout(title = 'Number of Briefs and Contracts by Published Date',
                     xaxis = list(title = "Published Date",
@@ -103,11 +122,22 @@ p %>%    layout(title = 'Number of Briefs and Contracts by Published Date',
   
 #### Contracts published per day:  
 
-Contracts published per day | |
+Briefs/Contracts published per day | |
 --|--|--      
-Prior to 23/May/17 | <strong>`r round(lm1$coefficients[2],2)`</strong>    
-After 23/May/17 | <strong>`r round(lm2$coefficients[2],2)`</strong>  
-
+Contracts before 23/May/17 | <strong>`r round(lm1$coefficients[2],2)`</strong>    
+Contracts after 23/May/17 | <strong>`r round(lm2$coefficients[2],2)`</strong>  
+NCCE briefs after 23/May/17 | <strong>`r round(lm3$coefficients[2],2)`</strong>  
+NCCE briefs last 30 days | <strong>`r round(lm4$coefficients[2],2)`</strong>  
+  
+### Contracts published in the last week  
+```{r echo=FALSE}
+last_contracts <- contracts %>%
+  filter(Publish.Date > Sys.Date() - 8) %>%
+  select(Agency, name, Supplier.ABN, Publish.Date, Value, sme_by_employees) %>%
+  arrange(desc(Publish.Date))
+```  
+  
+`r kable(last_contracts)`
   
 ### Contract Values      
 <br />    
@@ -183,7 +213,7 @@ plot_ly(cbd, x= ~dates, y = ~cum_value, name = 'SME', type='scatter',
                        "M<br />Of total -<br />Contracts: ",
                        cbd$cum_number,
                        "<br />Value: $",cbd$cum_value,"M")) %>% 
-  layout(title = 'Contracts published by seller type',
+  layout(title = 'Cumulative value by seller type',
          xaxis = list(title = "Published Date",
                       showgrid = TRUE),
          yaxis = list(title = "Cumulative Contract Value ($M)",
@@ -193,9 +223,16 @@ plot_ly(cbd, x= ~dates, y = ~cum_value, name = 'SME', type='scatter',
 ```
 <br>  
 ```{r, echo=FALSE}
+#lm <- lm(LogValue~Publish.Date,data=sonAll)
+#tl <- abline(lm$coefficients,
+#            min(datesSinceLaunch()$dates),
+#            max(datesSinceLaunch()$dates))
 plot_ly(data=sonAll,x=~Publish.Date,y=~LogValue,
         color=~SON.ID,colors=c("red","blue"),
         type="scatter",mode="markers") %>%
+  #add_lines(data=tl,x=~X1,y=~X2,
+  #                  name="trend line",
+  #                  line=list(dash='dot')) %>% 
   layout(title = 'Value of Individual Contracts on Austender',
                     xaxis = list(title = "Published Date",
                                  showgrid = TRUE),
@@ -207,24 +244,28 @@ plot_ly(data=sonAll,x=~Publish.Date,y=~LogValue,
 ```
   
 <br>   
-```{r, echo=FALSE}
+```{r,echo=FALSE}
+breaks <- 20
 vals3364729 <- sonAll[sonAll$SON.ID=="SON3364729",]$LogValue
+max_val_3364729 <- 10  #max(hist(vals3364729,breaks=breaks)$counts)
 dens3364729 <- density(vals3364729)
-dens3364729$y <- dens3364729$y * 0.2
+dens3364729$y <- dens3364729$y / max(dens3364729$y) * max_val_3364729 * 1.7
 vals3413842 <- sonAll[sonAll$SON.ID=="SON3413842",]$LogValue
+max_val_3413842 <- 15 #max(hist(vals3413842,breaks=breaks)$counts)
 dens3413842 <- density(vals3413842)
-  dens3413842$y <- dens3413842$y * 0.2
-
+dens3413842$y <- dens3413842$y / max(dens3413842$y) * max_val_3413842 * 1.6
+```
+```{r, echo=FALSE}
 p <- plot_ly(alpha = 0.6) %>%
-  add_histogram(x = vals3364729,name="DSPP contracts",nbinsx=20,histnorm="probability") %>%
-  add_histogram(x = vals3413842,name="DMP contracts",nbinsx=20,histnorm="probability") %>%
+  add_histogram(x = vals3364729,name="DSPP contracts",nbinsx=breaks) %>%
+  add_histogram(x = vals3413842,name="DMP contracts",nbinsx=breaks) %>%
   add_lines(x=~dens3364729$x,y=dens3364729$y,name="DSPP smoothed") %>%
   add_lines(x=~dens3413842$x,y=dens3413842$y,name="DMP smoothed") %>%
   layout(barmode = "overlay",
          title = "Number of Contracts by Value",
          xaxis = list(title = "Value ($)",ticktext = loglabs, tickvals=c(4,5,6,7),
                                  showgrid = TRUE),
-                    yaxis = list(title = "Proportion of contracts",
+                    yaxis = list(title = "Count of contracts",
                                  showgrid = TRUE))
 p
 
@@ -233,18 +274,27 @@ p
 ```{r, echo=FALSE}
 pubRate <- round(lm3$coefficients[2],2)
 dmpVals <- sonAll[sonAll$SON.ID=="SON3413842",]$Value
-avVal   <- round(mean(dmpVals)/1000,1)
-medVal   <- round(median(dmpVals)/1000,1)
-proj    <- round((avVal*1000 * lm2$coefficients[2] * 365)/1000000)
+dspVals <- sonAll[sonAll$SON.ID=="SON3364729",]$Value
+dmAv    <- round(mean(dmpVals)/1000,1)
+dmMed   <- round(median(dmpVals)/1000,1)
+dspAv   <- round(mean(dspVals)/1000,1)
+dspMed  <- round(median(dspVals)/1000,1)
+proj    <- round((dmAv*1000 * lm2$coefficients[2] * 365)/1000000)
 ```
 
 Current Values for Digital Marketplace Panel  | Value     
 --|--  
 Current contract publishing rate | `r round(lm2$coefficients[2],2)` contracts per day  
-Average value per contract       | $`r avVal`K  
-Median value per contract        | $`r medVal`K  
+Average value per contract       | $`r dmAv`K  
+Median value per contract        | $`r dmMed`K  
 Projected annual value           | $`r proj`M  
-
+  
+Values for the Digital Services Professionals Panel  | Value     
+--|--  
+Average value per contract       | $`r dspAv`K  
+Median value per contract        | $`r dspMed`K  
+  
+  
   
 ## Sellers  
   
@@ -292,7 +342,8 @@ plot_ly(data=merged,x=~index,y=~count,type="scatter",
                      "<br />Contracts: ",merged$number_contracts
                        )) %>% 
   layout(title="Counts of brief applications and reported contracts",
-         xaxis=list(title=""))  
+         xaxis=list(title=""),
+         yaxis=list(range=c(0,40)))  
 ```
   
   

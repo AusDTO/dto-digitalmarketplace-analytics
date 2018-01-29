@@ -20,7 +20,8 @@ extract_users <- function(header,include_dta_users = FALSE) {
   }
 
   #query
-  users_query  <- "https://dm-api.apps.platform.digital.gov.au/api/users"
+  #users_query  <- "https://dm-api.apps.platform.digital.gov.au/api/users"
+  users_query  <- prod_api("users")
   users_raw    <- fetchAllFromAPI(users_query,header,list())
   users        <- bind_rows(lapply(users_raw,process_users))
   # and some post-processing
@@ -29,6 +30,7 @@ extract_users <- function(header,include_dta_users = FALSE) {
   users$created_at   <- as.Date(users$created_at)
   users$logged_in_at <- as.Date(users$logged_in_at)
   #names(users) <- c("active","created_at","email_address","user_id","logged_in_at","user_name","role")
+  attr(users,"timestamp") <- Sys.time()
   if (include_dta_users) {
     return(users)
   }
@@ -38,14 +40,15 @@ extract_users <- function(header,include_dta_users = FALSE) {
 
 extract_sellers <- function(header) {
   seller_columns <- c("code","name","abn","joined","website",
-                      "contact_email","application_id","assessed_aoe","unassessed_aoe","legacy_aoe",
+                      "contact_email","email_domain","application_id","assessed_aoe","unassessed_aoe","legacy_aoe",
                       "product_only","dmp_framework","number_of_employees","sme_by_employees","sme_badge",
                       "is_recruiter","regional","start_up","female_owned","indigenous",
                       "address_line","suburb","state","country","postal_code",
                       "gov_exp_federal","gov_exp_international","gov_exp_local","gov_exp_state",
-                      "gov_exp_no_experience","creation_time")
+                      "gov_exp_no_experience","creation_time","liability_exp","work_comp_exp")
   
   process_raw_sellers <- function(df) {
+    df <- df[!is.na(df$status),]        # filter out the ORAMS sellers
     df <- df[df$status != "deleted",]
     
     frameworks <- function(x) {
@@ -66,6 +69,7 @@ extract_sellers <- function(header) {
     df$sme_by_employees <- !df$number_of_employees %in% c("unknown","200+")
     df$dmp_framework  <- unlist(lapply(df$frameworks,frameworks))
     df$contact_email  <- unlist(lapply(df$contacts,function(x) {x$email}))
+    df$email_domain   <- matrix(unlist(strsplit(df$contact_email,"@")),ncol=2,byrow=TRUE)[,2]
     sts               <- df$seller_type
     # this is the SME status that the seller has indicated themselves. Not all sellers
     # who are SMEs have selected the badge
@@ -75,15 +79,19 @@ extract_sellers <- function(header) {
     df                <- cbind(df,df$government_experience)
     df                <- cbind(df,df$address)
     df$joined         <- as.Date(df$creation_time)
+    df$liability_exp  <- as.Date(df$documents$liability$expiry)
+    df$work_comp_exp  <- as.Date(df$documents$workers$expiry)
     df <- df[,names(df) %in% seller_columns]
     # might want to write some other lines to extract the addresses, contacts etc
     df
   }
    
-  sellers_query <- "https://dm-api.apps.platform.digital.gov.au/api/suppliers"
+  #sellers_query <- "https://dm-api.apps.platform.digital.gov.au/api/suppliers"
+  sellers_query <- prod_api("suppliers")
   sellers_raw   <- fetchAllFromAPI(sellers_query,header,list())
   sellers       <- bind_rows(lapply(sellers_raw,process_raw_sellers))
   sellers       <- fill_logicals(sellers)
+  attr(sellers,"timestamp") <- Sys.time()
   return(sellers)
 }
 
@@ -91,10 +99,12 @@ extract_briefs  <- function(header, return_all = FALSE) {
   
   briefShortFilter <- c("id","status","title","organisation","sellerSelector",
                         "specialistRole","areaOfExpertise","budgetRange","contractLength","publishedAt",
-                        "createdAt","duration","frameworkFramework","lot","updatedAt")
+                        "createdAt","duration","close","frameworkFramework","lot","updatedAt",
+                        "phase","essentials","nicetohaves")
   briefPresentationFilter <- c("id","status","title","organisation","openTo",
                                "type","specialistRole","areaOfExpertise","budgetRange","contractLength",
-                               "created","published","duration","frameworkFramework","updatedAt")
+                               "created","published","close","duration","frameworkFramework",
+                               "updatedAt","phase","essentials","nicetohaves")
 
     
 
@@ -105,11 +115,20 @@ extract_briefs  <- function(header, return_all = FALSE) {
       briefs$publishedAt <- NA
     }
     briefs$duration  <- briefs$dates$application_open_weeks
+    briefs$close     <- string_to_date(briefs$dates$closing_date,format="%Y-%m-%d")
+    if (is.null(briefs$essentialRequirements)) {
+      briefs$essentials <- 0
+    } else {
+      briefs$essentials  <- sapply(briefs$essentialRequirements,length)
+    }
+    if (is.null(briefs$niceToHaveRequirements)) {
+      briefs$nicetohaves <- 0
+    } else {
+      briefs$nicetohaves <- sapply(briefs$niceToHaveRequirements,length)
+    }
     briefs           <- briefs[,names(briefs) %in% briefShortFilter]
-    briefs$published <- as.Date(briefs$publishedAt)
-    briefs$created   <- as.Date(briefs$createdAt)
+    briefs$created   <- parse_utc_timestamp_date(briefs$createdAt)
     return(briefs)
-    #briefs[,briefPresentationFilter]
   }
   
   postProcessBriefs <- function(briefs) {
@@ -121,18 +140,21 @@ extract_briefs  <- function(header, return_all = FALSE) {
       translate_specialist_role(briefs[is.na(briefs$areaOfExpertise),"specialistRole"])
     briefs$areaOfExpertise <- gsub("\\,"," ",briefs$areaOfExpertise)
     briefs$areaOfExpertise <- as.factor(briefs$areaOfExpertise)
-    #briefs[!is.na(briefs$type),]$type <- 'specialist'
-    #briefs[is.na(briefs$type),]$type  <- 'outcome'
-    #briefs
+    briefs$published <- parse_utc_timestamp_date(briefs$publishedAt)
+    # there are a few NAs early on
+    briefs[is.na(briefs$close),"close"] <- briefs[is.na(briefs$close),"published"] + 14
     return(briefs[,briefPresentationFilter])
   }
   
   ### Query starts here
-  brief_query   <- "https://dm-api.apps.platform.digital.gov.au/api/briefs"
+  #brief_query   <- "https://dm-api.apps.platform.digital.gov.au/api/briefs"
+  brief_query   <- prod_api("briefs")
   briefsRawList <- fetchAllFromAPI(brief_query,auth(header),list())
-  #briefsRaw     <- combineBriefs(data.frame(),briefsRawList)
+  #briefsRaw    <- combineBriefs(data.frame(),briefsRawList)
   briefsRaw     <- bind_rows(lapply(briefsRawList,processBriefs))
   briefsRaw     <- postProcessBriefs(briefsRaw)
+
+  attr(briefsRaw,"timestamp") <- Sys.time()
   
   #Down-filter and post-process
   # filter out the drafts and withdrawn briefs
@@ -142,6 +164,7 @@ extract_briefs  <- function(header, return_all = FALSE) {
   } # else {
     #postProcessBriefs(briefsRaw)
   #}
+  
   return(briefsRaw)
 }
 
@@ -159,6 +182,9 @@ extract_brief_responses <- function(header) {
     label <- ""
     if (length(x) > 0) {
       for (i in 1:length(x)) {
+        if (is.na(x[i])) {
+          x[i] <- ""
+        }
         if (x[i] == TRUE) {
           label <- paste(label,"TRUE")
         } else {
@@ -180,22 +206,33 @@ extract_brief_responses <- function(header) {
     df$essentialRequirements  <- unlist(lapply(df$essentialRequirements,convertLogic))
     df$niceToHaveRequirements <- unlist(lapply(df$niceToHaveRequirements,convertLogic))
     df$applicationDate        <- as.Date(df$createdAt)
+    if ("attachedDocumentURL" %in% names(df)) {
+      df$attachments            <- sapply(df$attachedDocumentURL,length)
+    } else {
+      df$attachments            <- 0
+    }
     return(df)
   }
   
-  responsesquery        <- "https://dm-api.apps.platform.digital.gov.au/api/brief-responses"
+  #responsesquery        <- "https://dm-api.apps.platform.digital.gov.au/api/brief-responses"
+  responsesquery        <- prod_api("brief-responses")
   bapps                 <- fetchAllFromAPI(responsesquery,auth(header),list())
   briefResponses        <- bind_rows(lapply(bapps,processBriefResponses))
-  names(briefResponses) <- c("availability","briefId","createdAt","dayRate",
-                             "essentialRequirements","applicationId","niceToHaveRequirements",
-                             "respondToEmailAddress","supplierId","supplierName","applicationDate")       
+  #names(briefResponses) <- c("availability","briefId","createdAt","dayRate",
+  #                           "essentialRequirements","applicationId","niceToHaveRequirements",
+  #                           "respondToEmailAddress","supplierId","supplierName","applicationDate")       
   #re-order columns
-  briefResponses        <- briefResponses[,c("briefId","applicationId","applicationDate","supplierId","supplierName",
+  briefResponses        <- briefResponses[,c("briefId","id","applicationDate","supplierCode","supplierName",
                                              "availability","dayRate","essentialRequirements","niceToHaveRequirements",
-                                             "respondToEmailAddress",
+                                             "respondToEmailAddress","attachments",
                                              "createdAt")]
+  names(briefResponses) <- c("briefId","applicationId","applicationDate","supplierId","supplierName",
+                             "availability","dayRate","essentialRequirements","niceToHaveRequirements",
+                             "respondToEmailAddress","attachments",
+                             "createdAt")
   briefResponses$dayRate <- as.numeric(briefResponses$dayRate)
-  return(briefResponses)
+  attr(briefResponses,"timestamp") <- Sys.time()
+    return(briefResponses)
 }
 
 
@@ -238,6 +275,9 @@ extract_applications <- function(header) {
     df$case_studies      <- NULL
     df$case_study_ids    <- NULL
     df$certifications    <- NULL
+    df$day               <- NULL
+    df$month             <- NULL
+    df$year              <- NULL
     df$disclosures       <- NULL
     df$documents         <- NULL
     df$government_experience <- NULL
@@ -295,9 +335,11 @@ extract_applications <- function(header) {
     return(df)
   }
   
-  apps_query    <- "https://dm-api.apps.platform.digital.gov.au/api/applications"
+  #apps_query    <- "https://dm-api.apps.platform.digital.gov.au/api/applications"
+  apps_query    <- prod_api("applications")
   apps_raw_list <- fetchAllFromAPI(apps_query,auth(header),list())
   apps          <- bind_rows(lapply(apps_raw_list,process_applications))
+  attr(apps,"timestamp") <- Sys.time()
   return(post_process_applications(apps))
   
 }
@@ -321,7 +363,8 @@ extract_seller_prices <- function(rs) {
 # just extracts basic details about domain assessment requests
 extract_assessments <- function(header) {
   
-  ass_query    <- "https://dm-api.apps.platform.digital.gov.au/api/assessments"
+  #ass_query    <- "https://dm-api.apps.platform.digital.gov.au/api/assessments"
+  ass_query    <- prod_api("assessments")
   getdata<-GET(url=ass_query, add_headers(Authorization=header))
   raw <- fromJSON(content(getdata,type="text"))
   if (length(raw) > 1) {
@@ -347,7 +390,8 @@ extract_assessments <- function(header) {
                                    },a=assessments)
   assessments$resubmission <- duplicated(assessments[,c("seller_id","domain")])
   #assessments        <- assessments[assessments$status=="unassessed",]
-  return(assessments)
+  attr(assessments,"timestamp") <- Sys.time()
+    return(assessments)
   
 }
 
@@ -384,5 +428,45 @@ extract_austender <- function(sons = c("SON3413842","SON3364729")) {
     return(df)
   }
   x <- bind_rows(lapply(sons,extract_son))
+  attr(x,"timestamp") <- Sys.time()
   return(x)
 }
+
+extract_feedback <- function(header) {
+  
+  # function to de-duplicate the feedback
+  de_dupe <- function(df) {
+    # use the duration figures as a unique id for each bit of feedback
+    x <- df %>% group_by(user,difficulty,object_id,object_type,
+                          timeToComplete,date) %>%
+      summarise(comment = paste0(comment,collapse="")) %>%
+      arrange(object_id,date)
+    return(x)
+  }
+  
+  process_feedback <- function(df) {
+    if (!is.data.frame(df)) {
+      # catches the pagination 'list'
+      return(NULL)
+    }
+    df       <- cbind(df,df$data)
+    df$data  <- NULL
+    df$links <- NULL
+    df$date  <- as.Date(df$createdAt)
+    df[is.na(df$comment),"comment"] <- ""
+    #return(df)
+    df <- de_dupe(df)
+    df$cx <- translate(c("easy","ok","difficult"),c(2,1,0),df$difficulty)
+    return(df)
+  }
+  
+  #feed_query  <- paste0(prod_api_url,"audit-events?audit-type=feedback")
+  feed_query  <- prod_api("audit-events?audit-type=feedback")
+  feed_raw    <- fetchAllFromAPI(feed_query,auth(header),list())
+  #getdata<-GET(url=feed_query, add_headers(Authorization=header))
+  #raw <- fromJSON(content(getdata,type="text"))
+  feed        <- bind_rows(lapply(feed_raw,process_feedback))
+  attr(feed,"timestamp") <- Sys.time()
+  return(feed)
+}
+

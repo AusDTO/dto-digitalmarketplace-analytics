@@ -109,6 +109,91 @@ plot_agency_count_by_category <- function(buyers,publish=FALSE) {
   #return(agencies)
 }
 
+# updated version for monthly reports
+plot_agency_count_by_category_2 <- function(agencies,publish=FALSE) {
+  #agencies$entities <- factor(agencies$entities,levels=cats)
+  plot_ly(agencies,labels=~entities, values=~count,
+          #rotation = "140",
+          textposition = 'outside',
+          textinfo = 'label+percent+value',
+          #sort=FALSE,
+          marker=list(colors = brewer.pal(5,"Dark2"),
+                      line = list(color = '#FFFFFF', width = 1))) %>%
+    add_pie(hole=0.4) %>%
+    layout(title = "Agencies By Type",
+           xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+           yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+  #return(agencies)
+}
+
+# plots a distribution of day rates for specialist briefs based on seller responses
+plot_violins_of_day_rates <- function(bR) {
+  # violin plots by area of expertise
+  vals <- briefResponses %>% filter(!is.na(areaOfExpertise),
+                                    !is.na(dayRate),
+                                    dayRate > 450,dayRate < 4000)
+  add_density_plot <- function(p,bR,i,color) {
+    #  dens <- density(bR$dayRate,na.rm=TRUE,from=(min(bR$dayRate)-100))
+    dens <- density(bR$dayRate,na.rm=TRUE,from=350,to=2750)
+    up   <- dens$y/max(dens$y) + (i*3 + 2)
+    down <- (i*3 + 2) - dens$y/max(dens$y)
+    n    <- bR[1,"areaOfExpertise"]
+    p <- p %>% add_lines(x=dens$x,y=up,mode="line",color=color,name=n)
+    p %>% add_lines(x=dens$x,y=down,mode="line",color=color,
+                    fill = "tonexty",
+                    showlegend=FALSE)
+  }
+  
+  resps <- vals %>% group_by(areaOfExpertise) %>% 
+    summarise(number_of_briefs = length(unique(id)), 
+              number_of_responses = length(applicationId))
+  
+  areas <- data.frame(areaOfExpertise=unique(vals$areaOfExpertise))
+  doms  <- data.frame(areaOfExpertise= domains)
+  resps <- merge(resps,doms,all.y=TRUE)
+  resps[is.na(resps)] <- 0
+  names(resps) <- c("Area of Expertise","Number of Briefs","Number of Responses")
+  all_dens <- density(vals$dayRate,na.rm=TRUE,from=350,to=2750)
+  up       <- all_dens$y/max(all_dens$y) + 2
+  down     <- 2 - all_dens$y/max(all_dens$y)
+  p <- plot_ly(x=all_dens$x,y=up,
+               type="scatter",
+               mode="lines",
+               name="All areas",
+               color=brewer.pal(10,"Paired")[1])
+  p <- p %>% add_lines(x=all_dens$x,y=down,mode="line",
+                       color=brewer.pal(10,"Paired")[1],
+                       fill = "tonexty",
+                       showlegend=FALSE)
+  areas <- as.character(resps[resps$`Number of Responses`>10,]$`Area of Expertise`)
+  for (i in 1:length(areas)) {
+    #  if (resps[resps$areaOfExpertise==areas[i],]$number_of_responses > 9) {
+    p <- add_density_plot(p,
+                          vals[vals$areaOfExpertise==areas[i],],
+                          i,
+                          brewer.pal(10,"Paired")[i+1])
+    #  }
+  }
+  p <- p %>% layout(xaxis=list(range=c(0,3000),
+                               title="Day rate trend ($ incl GST)", showaxis=FALSE),
+                    yaxis=list(showticklabels=FALSE,
+                               showgrid=FALSE,
+                               showline=FALSE),
+                    #legend = list(orientation = 'h')
+                    showlegend=FALSE)
+  #title="Distribution of Day Rates for Specialist Briefs")
+  # annotations
+  y_s   <- c(2,1:length(areas) * 3 + 2) + 0.6
+  areas <- c("All areas",areas)
+  p <- p %>% add_annotations(  
+    x = rep(2500,length(areas)),
+    y = y_s,
+    showarrow=FALSE,
+    text = areas
+  )
+  p
+}
+
 plot_contracts_sme_by_value <- function(smes,palette) {
   plot_ly(smes,labels=~SME, values=~byvalue, marker = list(colors = palette[c(9,19)]),
           textposition="inside",

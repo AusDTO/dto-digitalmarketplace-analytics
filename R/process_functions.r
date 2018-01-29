@@ -6,25 +6,17 @@
 # - add the date the buyer will go, or went inactive
 process_buyers <- function(u,update = FALSE) {
   b             <- u[u$role=="buyer",]
-  agencies      <- gs_title("ref-domains") %>% gs_read(ws = "agencies")
-  # check if all agency domains names are present in the agencies df
-  e_domains       <- unique(b$email_domain)
-  missing_domains <- e_domains[!e_domains %in% agencies$email_domain]
-  if (length(missing_domains) > 0) {
-    temp <- agencies[1:length(missing_domains),]
-    temp$email_domain <- missing_domains
-    for (i in 1:length(missing_domains)) {
-      print(paste0("Missing domain - enter temp details: ",missing_domains[i]))
-      temp[i,"category"]   <- readline("Category: ")
-      temp[i,"agencyName"] <- readline("Agency Name: ")
-      temp[i,"state"]      <- readline("State: ")
-      temp[i,"D10"]        <- ""
-      temp[i,"sector"]     <- temp[i,"category"]
+  missing_domains <- "foo"
+  while(length(missing_domains) > 0) {
+    agencies      <- gs_title("ref-domains") %>% gs_read(ws = "agencies")
+    # check if all agency domains names are present in the agencies df
+    e_domains       <- unique(b$email_domain)
+    missing_domains <- e_domains[!e_domains %in% agencies$email_domain]
+    if (length(missing_domains) > 0) {
+      print(paste0("Missing domains ",missing_domains))
+      readline("Enter details in the ref-domains sheet and hit enter to continue")
     }
-    print(temp)
-    agencies <- bind_rows(agencies,temp)
-    missing_agencies <<- temp
-  }  
+  }
   b            <- merge(b,agencies,by.x="email_domain",by.y="email_domain",all.x = TRUE)
   # legacy missing check - leaving in place, but should not be triggered any more
   missing      <- unique(b[is.na(b$category),]$email_domain)
@@ -34,6 +26,9 @@ process_buyers <- function(u,update = FALSE) {
     print(missing)
     stop()
   }
+  # filter the inactive buyers
+  b <- b[b$active,]
+  attr(b,"timestamp") <- Sys.time()
   if (update) {
     write_new_sheet("RegisteredBuyers",b)  
   }
@@ -52,7 +47,8 @@ process_briefs <- function(b,buy,update_gs=TRUE) {
   fetchBuyer <- function(i,df) {
     #print(which(df$id==i))
     row = which(df$id==i)
-    bQuery <- paste("https://dm-api.apps.platform.digital.gov.au/api/briefs",as.character(i),sep="/")
+    #bQuery <- paste("https://dm-api.apps.platform.digital.gov.au/api/briefs",as.character(i),sep="/")
+    bQuery <- prod_api(paste0("briefs/",as.character(i)))
     bRaw   <- fetchFromAPI(bQuery,header)
     #print(bRaw$users)
     return(c(bRaw$users$id[1],bRaw$users$name[1],bRaw$users$emailAddress[1]))
@@ -63,7 +59,7 @@ process_briefs <- function(b,buy,update_gs=TRUE) {
   sheet_name  <- 'allBriefs'
   briefPresentationFilter <- c("id","status","title","organisation","openTo",
                                "type","areaOfExpertise","budgetRange","contractLength",
-                               "created","published","duration","frameworkFramework",
+                               "created","published","duration","frameworkFramework","phase",
                                "buyerID","buyerName",	"buyerEmail")
   ## Update the briefs Google Sheet
   briefsSheet <- gs_title(sheet_name)
@@ -74,24 +70,24 @@ process_briefs <- function(b,buy,update_gs=TRUE) {
   lastUpdate  <- max(temp)
   # read the last worksheet
   lastBriefs  <- briefsSheet %>% gs_read(ws = as.character(lastUpdate))
-  sc          <- c("id","buyerID","buyerName","buyerEmail","updated")
+  sc          <- c("id","buyerID","buyerName","buyerEmail")
   lastBriefs  <- lastBriefs[,sc]
   # merge the additional columns
   updatedBriefs <- merge(b,lastBriefs,by.x="id",by.y="id",all.x=TRUE)
   
   # some seriously ugly code here, but it works ...
-  if (sum(is.na(updatedBriefs$updated) > 0)) {
-    x <- lapply(updatedBriefs[is.na(updatedBriefs$updated),"id"],fetchBuyer,df = updatedBriefs)
+  if (sum(is.na(updatedBriefs$buyerID) > 0)) {
+    x <- lapply(updatedBriefs[is.na(updatedBriefs$buyerID),"id"],fetchBuyer,df = updatedBriefs)
     buyer_users              <- matrix(data=unlist(x),ncol=3,byrow=TRUE)
-    updatedBriefs[is.na(updatedBriefs$updated),"buyerID"] <- as.numeric(buyer_users[,1])
-    updatedBriefs[is.na(updatedBriefs$updated),"buyerName"]  <- buyer_users[,2]
-    updatedBriefs[is.na(updatedBriefs$updated),"buyerEmail"] <- buyer_users[,3]
-    updatedBriefs[is.na(updatedBriefs$updated),"updated"] <- updatedBriefs[is.na(updatedBriefs$updated),"updatedAt"]
+    updatedBriefs[is.na(updatedBriefs$buyerID),"buyerID"]       <- as.numeric(buyer_users[,1])
+    updatedBriefs[is.na(updatedBriefs$buyerName),"buyerName"]   <- buyer_users[,2]
+    updatedBriefs[is.na(updatedBriefs$buyerEmail),"buyerEmail"] <- buyer_users[,3]
+    #updatedBriefs[is.na(updatedBriefs$updated),"updated"] <- updatedBriefs[is.na(updatedBriefs$updated),"updatedAt"]
   }
-  buy <- buy[,c("id","email_address","category","agencyName")]
+  buy <- buy[,c("id","email_domain","category","agencyName","reports","entities")]
   updatedBriefs <- left_join(updatedBriefs,buy,by=c("buyerID" = "id"))
-
-  # write back to the spreadsheet
+  attr(updatedBriefs,"timestamp") <- Sys.time()
+    # write back to the spreadsheet
   if (update_gs) {
     write_new_sheet(sheet_name,updatedBriefs,is_verbose = TRUE)
   }
@@ -101,6 +97,7 @@ process_briefs <- function(b,buy,update_gs=TRUE) {
 # merges briefs and responses. 
 process_brief_responses <- function(responses,briefs, update_gs=FALSE) {
   df <- merge(briefs,responses,by.x="id",by.y="briefId",all.x=TRUE)
+  attr(df,"timestamp") <- Sys.time()
   if (update_gs) {
     #write_new_sheet("BriefResponses",df,TRUE)
   }
@@ -219,5 +216,7 @@ process_sellers_and_applications <- function(s,a,u) {
 process_contracts <- function(contracts,sellers) {
   c <- contracts
   s <- sellers
-  left_join(c,s,by=c("Supplier.ABN" = "abn"))
+  contracts <- left_join(c,s,by=c("Supplier.ABN" = "abn"))
+  attr(contracts,"timestamp") <- Sys.time()
+  return(contracts)
 }

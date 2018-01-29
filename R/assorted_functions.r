@@ -42,3 +42,71 @@ generate_regional_postcode_list <- function() {
 
   writey(postcodes,"regions_by_postcode")
 }
+
+# function to inspect all live briefs that are open to selected or to 1
+# returns the sellers that have been invited, as well as information about
+# the seller's status
+invited_sellers <- function(briefs,briefResponses) {
+  br <- briefs %>% filter(status == "live",openTo %in% c("Some","One"))
+  if (dim(br)[1]==0) {
+    return(data.frame(id="No open to 1/selected briefs"))
+  }
+  # fetch the seller details for an individual brief
+  fetchInvitedSellers <- function(id) {
+    #bQuery <- paste("https://dm-api.apps.platform.digital.gov.au/api/briefs",as.character(id),sep="/")
+    bQuery <- prod_api(paste0("briefs/",as.character(id)))
+    bRaw   <- fetchFromAPI(bQuery,header)
+    emails = bRaw$sellerEmailList
+    if (bRaw$sellerSelector=="oneSeller") {
+      emails = bRaw$sellerEmail
+    }
+    if (length(emails)==0) {
+      emails <- "**missing**@**missing**"
+    }
+    if (!valid_email_address(emails)) {
+      emails <- "**invalid**@**invalid**"
+    }
+    df        <- data.frame(id=id,emails=emails,stringsAsFactors = FALSE)
+    df$closes <- as.Date(bRaw$dates$closing_date)
+    if (is.null(bRaw$areaOfExpertise)) {
+      df$aoe <- NA
+    } else {
+      df$aoe    <- bRaw$areaOfExpertise
+    }
+    return(df)
+  }  
+
+  invitees                   <- bind_rows(lapply(br$id,fetchInvitedSellers))
+  invitees$email_domain      <- matrix(unlist(strsplit(invitees$emails,"@")),ncol=2,byrow=TRUE)[,2]
+  invitees$seller_registered <- invitees$email_domain %in% sellers$email_domain
+  invitees$user_registered   <- invitees$emails %in% users$email_address
+  invitees$is_contact        <- invitees$emails %in% sellers$contact_email
+  aoes                       <- sellers[,c("code","email_domain","assessed_aoe")]
+  invitees                   <- merge(invitees,aoes,by.x="email_domain",by.y="email_domain")
+  invitees$assessed          <- FALSE
+  for (i in 1:dim(invitees)[1]) {
+    invitees[i,"assessed"] <- grepl(invitees[i,"aoe"],invitees[i,"assessed_aoe"])
+  }
+  invitees[is.na(invitees$assessed),"assessed"] <- 
+    nchar(invitees[is.na(invitees$assessed),"assessed_aoe"]) > 2
+  invitees$assessed_aoe      <- NULL
+  x <- paste(invitees$id,invitees$code,sep="|")
+  y <- paste(briefResponses$id,briefResponses$supplierId,sep="|")
+  invitees$has_applied       <- x %in% y
+  return(invitees[order(invitees$closes),])
+}
+
+# generate a list of sellers that can be shared with buyers
+create_seller_list <- function(sellers) {
+  s <- sellers %>% 
+    filter(dmp_framework,!product_only) %>%
+    select(code, name, abn, assessed_aoe, unassessed_aoe,sme_by_employees,indigenous) %>%
+    mutate(aoe = paste(assessed_aoe,unassessed_aoe,sep="|"))
+  for (i in domains) {
+    #strip the commas
+    d <- gsub(",","",i)
+    d <- gsub("\\s+","_",d)
+    s[,d] <- str_detect(s$aoe,i)
+  }
+  select(s,-assessed_aoe,-unassessed_aoe,-aoe)
+}

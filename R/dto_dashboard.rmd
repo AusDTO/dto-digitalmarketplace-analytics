@@ -1,0 +1,172 @@
+---
+title: "Dashboard Stats"
+output:
+  html_document:
+  theme: cerulean
+  toc: true
+pdf_document: default
+word_document: default
+always_allow_html: yes
+---
+  
+```{r setup, include=FALSE,echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE,include=FALSE}
+# if rendered in a new R session, load the session values
+if (!exists("buyers")) {
+  source("utilities.r")
+  source("plotly_functions.r")
+  library(knitr)
+  library(tidyr)
+  library(RColorBrewer)
+  library(dplyr)
+  library(plotly)
+  library(googlesheets)
+  ## load the files - ensure these files are already produced
+  load(paste0(getwd(),"/../data/",substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
+}
+
+dsl   <- datesSinceLaunch()$dates
+yms   <- unique(format(dsl,"%Y-%m"))[-1]
+ymds  <- as.Date(paste0(yms,"-01")) - 1
+```
+## User satisfaction  
+Calculated as the average monthly response from user satisfaction surveys on the Marketplace.  
+User satisfaction scores are translated to 0-100 scale (Difficult=0,Ok=50,Easy=100)  
+    
+```{r,echo=FALSE}
+f <- feedback %>% 
+  mutate(month=format(date,"%Y-%m")) %>%
+  filter(!is.na(cx)) %>%
+  group_by(month) %>%
+  summarise(responses=length(month),
+            average_score=round(mean(cx*50)),
+            #median=median(cx*50), # not interesting, as it will always be 0,50 or 100
+            sd=round(sd(cx*50)))
+plot_ly(f,x=~month,y=~average_score,type="scatter",mode="markers") %>%
+  layout(title="User satisfaction",
+         xaxis=list(title="Month"),
+         yaxis=list(range=c(0,100),title="User satisfaction"))
+
+```  
+  
+  
+### Summary figures
+`r kable(f)`  
+  
+## Cost per transaction  
+
+```{r,echo=FALSE,include=F}
+cprd      <- gs_title("Cost Per Transaction Data",verbose=F) %>% 
+                gs_read(ws = "data",verbose=F) %>% 
+                filter(!is.na(sessions))
+```
+`r kable(cprd)`
+
+## Digital take-up  
+Calculated as the percentage of commonwealth government organisations that have published a brief on the Digital Marketplace.  
+  
+Organisations included are 'principal entities' of type 'Non Corporate Commonwealth Entity' (NCCE) or 'Corporate Commonwealth Entity' (CCE)  
+   
+At 30 Sep 2017, there are 182 organisations.  
+
+```{r,echo=FALSE}
+br <- briefs %>% 
+  filter(entities %in% c("NCCE","CCE")) %>%
+  mutate(month=format(published,"%Y-%m"))
+published_agencies <- sapply(ymds,
+                             function(x,br) {
+                               length(unique(br[br$published <= x,"email_domain"]))
+                             },
+                             br = br)
+published_agencies <- round(published_agencies / 182 * 100)
+plot_ly(x=ymds,y=published_agencies,type="scatter",mode="markers") %>%
+    layout(title="Digital take-up",
+         xaxis=list(title=""),
+         yaxis=list(range=c(0,100),title="% of Commonwealth agencies"))
+takeup <- data.frame(as_at_date = ymds,percent_takeup = published_agencies)
+```  
+  
+`r kable(takeup)`  
+
+
+## Completion rate  
+Shows the percentage of published briefs that are reported in Austender. Only briefs published by reporting entities and have closed are included.  
+```{r,echo=F}
+br <- briefs %>% filter(reports=="yes",status=="closed")
+briefs_by_date <- sapply(ymds,
+                             function(x,br) {
+                               dim(br[br$published <= x,])[1]
+                             },
+                             br = br)
+contracts_by_date <- sapply(ymds,
+                             function(x,co) {
+                               dim(co[co$Publish.Date <= x,])[1]
+                             },
+                             co = contracts)
+percs <- round(contracts_by_date / briefs_by_date * 100)[-1]
+plot_ly(x=ymds[-1],y=percs,type="scatter",mode="markers") %>%
+    layout(title="Completion rate",
+         xaxis=list(title=""),
+         yaxis=list(range=c(0,100),title="% of briefs reported as contracted"))
+completion_rate <- data.frame(as_at_date=ymds[-1],percent_complete=percs)
+```  
+  
+`r kable(completion_rate)`  
+    
+##  Total opportunities  
+```{r,echo=F}
+brief_count <- sapply(ymds,
+             function(x,br) {
+               dim(br[br$published <= x,])[1]
+             },
+             br = briefs)
+brief_counts <- data.frame(as_at_date=ymds,published_briefs=brief_count) 
+plot_ly(brief_counts,x=~as_at_date,y=~brief_count,type="scatter",mode="markers") %>%
+    layout(title="Total opportunities",
+         xaxis=list(title=""),
+         yaxis=list(title="Opportunities published"))
+
+```
+  
+`r kable(brief_counts)`  
+
+## Registered buyers  
+
+```{r,echo=F}
+bu <- buyers %>% filter(active,!grepl("\\+",email_address))
+buyer_count <- sapply(ymds,
+                 function(x,bu) {
+                   dim(bu[bu$created_at <= x,])[1]
+                 },
+                 bu = bu)
+buyer_counts <- data.frame(as_at_date=ymds,registered_buyers=buyer_count) 
+plot_ly(buyer_counts,x=~as_at_date,y=~buyer_count,type="scatter",mode="markers") %>%
+    layout(title="Total registered buyers",
+         xaxis=list(title=""),
+         yaxis=list(title="Buyers"))
+
+```  
+  
+`r kable(buyer_counts)`  
+  
+  
+## Sellers  
+
+```{r,echo=F}
+seller_count <- sapply(ymds,
+                      function(x,se) {
+                        dim(se[se$joined <= x,])[1]
+                      },
+                      se = sellers)
+seller_counts <- data.frame(as_at_date=ymds,registered_sellers=seller_count) 
+plot_ly(seller_counts,x=~as_at_date,y=~seller_count,type="scatter",mode="markers") %>%
+    layout(title="Total registered sellers",
+         xaxis=list(title=""),
+         yaxis=list(title="Sellers"))
+
+```  
+  
+`r kable(seller_counts)`  

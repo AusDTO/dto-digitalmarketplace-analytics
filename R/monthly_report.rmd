@@ -1,14 +1,21 @@
 ---
-title: "Monthly Reports Data Summary"
-output: html_document
+title: "Monthly Insights Reports Data Summary"
+output:
+  html_document:
+    theme: cerulean
+    toc: true
+  pdf_document: default
+  word_document: default
+always_allow_html: yes
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-start <- as.Date("2017-09-11")
-end   <- as.Date("2017-09-26")
+start <- as.Date("2017-12-01")
+end   <- as.Date("2017-12-31")
 fy_start <- as.Date("2017-07-01")
-reference_file <- "..\\data\\2017-09-19.Rdata"
+ninety_days <- seq(end-89,end,by="day")
+#reference_file <- "..\\data\\2017-09-19.Rdata"
 
 # if rendered in a new R session, load the session values
 if (!exists("buyers")) {
@@ -21,7 +28,9 @@ if (!exists("buyers")) {
   library(plotly)
   ## load the files - ensure these files are already produced
   #load(paste0(getwd(),"/../data/",substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
-  load(reference_file)
+  load(paste0(getwd(),"\\..",rel_path_data,substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
+
+  #load(reference_file)
 }
 
 
@@ -31,22 +40,38 @@ Starts `r start`
 Ends `r end`  
 Current financial year: `r fy_start`  
   
-## Registered Entities  
-  
+# Who is buying?
+
 ```{r,echo=FALSE}
-agencies_counts <- buyers %>%
-                group_by(email_domain,category) %>% 
-                summarise(count=length(email_domain)) %>%
-                group_by(category) %>%
-                summarise(count = length(category))
-agencies_counts$percent <- round(agencies_counts$count/sum(agencies_counts$count) * 100,digits=1)
-agencies_counts <- rbind(agencies_counts,c("Total agencies",sum(agencies_counts$count),100.0))
+agencies <- buyers %>%
+    group_by(entities) %>% 
+    summarise(count=length(unique(email_domain)))
+cats <- c("Commonwealth - CCE",
+            "Commonwealth - NCCE",
+            "Local","State / Territory","Other")
+agencies$entities <- translate(
+                        qw("CCE NCCE Local State Other"),
+                        cats,
+                        agencies$entities)
+agencies <- agencies %>% arrange(entities)        
+#agencies_counts <- buyers %>%
+#                group_by(email_domain,category) %>% 
+#                summarise(count=length(email_domain)) %>%
+#                group_by(category) %>%
+#                summarise(count = length(category))
+#agencies_counts$percent <- round(agencies_counts$count/sum(agencies_counts$count) * 100,digits=1)
+#agencies_counts <- rbind(agencies_counts,c("Total agencies",sum(agencies_counts$count),100.0))
+
+plot_agency_count_by_category_2(agencies)
+
+agencies <- rbind(agencies,
+                  c("Total number of registered entities",sum(agencies$count)))
 
 ```  
 
-`r kable(agencies_counts)`     
+`r kable(agencies)`     
   
-# Top buyers in month  
+## Top buyers in month  
 
 ```{r,echo=FALSE}
 buyer_counts <- briefs %>%
@@ -58,7 +83,9 @@ buyer_counts <- briefs %>%
 
 `r kable(buyer_counts)`     
   
-# How are we encouraging competition  
+# How are we encouraging competition?  
+## Dollar value awarded to SMEs  
+
 
 ```{r,echo=FALSE}
 # sme figures
@@ -73,30 +100,89 @@ sme_emps$by_value <- sme_emps$value / sum(sme_emps$value) * 100
 sme_emps$by_count <- sme_emps$count / sum(sme_emps$count) * 100
 ```
 
-`r kable(sme_emps)`  
+`r kable(sme_emps,digits=1)`  
   
-## Contract values  
+## Open to      
+```{r,echo=FALSE}
+x <- briefs %>% group_by(openTo) %>% summarise(count = length(openTo))
+plot_ly(x,labels=~openTo, values=~count,
+          textposition = 'outside',
+          textinfo = 'label+percent+value',
+          marker=list(colors = brewer.pal(5,"Dark2"),
+                      line = list(color = '#FFFFFF', width = 1))) %>%
+    add_pie(hole=0.4) %>%
+    layout(title = "Open to",
+           xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+           yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+
+```  
+  
+## Types of briefs published    
+```{r,echo=FALSE}
+x <- briefs %>% group_by(type) %>% summarise(count = length(type))
+plot_ly(x,labels=~type, values=~count,
+          textposition = 'outside',
+          textinfo = 'label+percent+value',
+          marker=list(colors = brewer.pal(5,"Dark2"),
+                      line = list(color = '#FFFFFF', width = 1))) %>%
+    add_pie(hole=0.4) %>%
+    layout(title = "Types of brief",
+           xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+           yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+
+```  
+
+## Contract values tile  
 
 ```{r,echo=FALSE}
+# all contracts awarded to the end of the reporting month
 m_contracts <- contracts %>%
   filter(Publish.Date <= end)
-total_value <- sum(m_contracts$Value)
+total_value <- round(sum(m_contracts$Value)/1000000,digits=2)
 total_contracts <- dim(m_contracts)[1]
 
+# filter out contracts awarded prior to the reporting month
 m_contracts <- m_contracts %>%
   filter(Publish.Date >= start)
-monthly_value <- sum(m_contracts$Value)
+monthly_value <- round(sum(m_contracts$Value)/1000000,digits=2)
 monthly_contracts <- dim(m_contracts)[1]
+
+m_by_sme <- m_contracts %>%
+  group_by(sme_by_employees) %>%
+  summarise(count = length(sme_by_employees), value = sum(Value))
+m_by_sme$perc_by_count <- m_by_sme$count / (sum(m_by_sme$count)) * 100
+m_by_sme$perc_by_value <- m_by_sme$value / (sum(m_by_sme$value)) * 100
 
 ```
    
-Total value of contracts  = $`r total_value`  
+Total value of contracts  = $`r total_value`M  
 Total number of contracts = `r total_contracts`   
-Monthly value of contracts = $`r monthly_value`  
+<br />  
+Monthly value of contracts = $`r monthly_value`M  
 Monthly number of contracts = `r monthly_contracts`  
 
-  
-## Sellers  
+### Spark line of contract value in the past 90 days  
+
+```{r,echo=FALSE}
+# show a spark line of contract value over the past 90 days
+m_contracts <- contracts %>%
+  filter(Publish.Date > end - 90) %>%
+  arrange(Publish.Date) %>%
+  mutate(cumulative = cumsum(Value))
+vals <- sapply(ninety_days,function(x,c) {
+                c <- c %>% filter(c$Publish.Date <= x)
+                if (dim(c)[1] == 0) {
+                  return(0)
+                }
+                return(max(c$cumulative))
+              },c=m_contracts)
+plot_ly(x=~ninety_days,y=~vals,mode="lines",type="scatter") %>%
+  layout(title="",
+         xaxis=list(visible=FALSE),
+         yaxis=list(visible=FALSE))
+```  
+
+## Sellers tile    
 ```{r,echo=FALSE}
 m_sellers <- sellers %>%
   filter(joined <= end)
@@ -110,36 +196,84 @@ monthly_sellers <- dim(m_sellers)[1]
 Total sellers = `r total_sellers`  
 Sellers joining in month = `r monthly_sellers`  
   
-## Published briefs  
+### Spark line of registered sellers in the past 90 days  
+
 ```{r,echo=FALSE}
-m_briefs <- briefs %>%
+# show a spark line of contract value over the past 90 days
+s <- sellers %>%
+  filter(joined > end - 90, joined <= end) %>%
+  arrange(joined)
+s$count <- 1:dim(s)[1]
+vals <- sapply(ninety_days,function(x,s) {
+                s <- s %>% filter(s$joined <= x)
+                if (dim(s)[1] == 0) {
+                  return(0)
+                }
+                return(max(s$count))
+              },s=s)
+plot_ly(x=~ninety_days,y=~vals,mode="lines",type="scatter") %>%
+  layout(title="",
+         xaxis=list(visible=FALSE),
+         yaxis=list(visible=FALSE))
+```    
+  
+## Opportunities tile    
+```{r,echo=FALSE}
+ops <- briefs %>%
   filter(published <= end)
-total_briefs <- dim(m_briefs)[1]
+total_ops <- dim(ops)[1]
 
-open_to_selected <- m_briefs %>%
-  group_by(openTo) %>%
-  summarise(count = length(openTo))
-open_to_selected$perc <- open_to_selected$count / sum(open_to_selected$count) * 100
-
-type_counts <- m_briefs %>%
-  group_by(type) %>%
-  summarise(count = length(type))
-type_counts$perc <- type_counts$count / sum(type_counts$count) * 100
-
-m_briefs <- m_briefs %>%
+ops <- briefs %>%
   filter(published >= start)
-monthly_briefs <- dim(m_briefs)[1]
+monthly_ops <- dim(ops)[1]
 ```
   
-Total briefs = `r total_briefs`  
-Monthly briefs = `r monthly_briefs`  
+Total opportunities = `r total_ops`  
+Opportunities in the month = `r monthly_ops`  
   
-Open to:  
-`r kable(open_to_selected)`  
+### Spark line of opportunities in the past 90 days  
+
+```{r,echo=FALSE}
+b <- briefs %>%
+  filter(published > end - 90, published <= end) %>%
+  arrange(published)
+b$count <- 1:dim(b)[1]
+vals <- sapply(ninety_days,function(x,b) {
+                b <- b %>% filter(b$published <= x)
+                if (dim(b)[1] == 0) {
+                  return(0)
+                }
+                return(max(b$count))
+              },b=b)
+plot_ly(x=~ninety_days,y=~vals,mode="lines",type="scatter") %>%
+  layout(title="",
+         xaxis=list(visible=FALSE),
+         yaxis=list(visible=FALSE))
+``` 
+
+# How do we break down procurement  
+
+```{r,echo=FALSE}
+by_phase <- briefs %>% 
+  filter(!is.na(phase)) %>%
+  group_by(phase) %>%
+  summarise(count = length(phase))
+by_phase$percentage <- round(by_phase$count/sum(by_phase$count) * 100)
+by_phase <- rbind(by_phase,c("Total",sum(by_phase$count),100))
+NAs      <- sum(is.na(briefs$phase))
+```  
   
-Brief type:  
-`r kable(type_counts)`  
+`r kable(by_phase,digits=2)`  
+Number of briefs with phase not set: `r NAs` - these are not counted above  
+
   
+## Trend for day rates  
+```{r,echo=FALSE}
+br <- briefResponses %>% filter(applicationDate <= end)
+plot_violins_of_day_rates(br)
+```  
+
+
 ## Types of briefs  
 Total briefs in each category since launch
 
@@ -151,18 +285,20 @@ aoe_counts <- briefs %>%
   arrange(desc(count))
 aoe_counts$areaOfExpertise <- as.character(aoe_counts$areaOfExpertise)
 # sum of counts excluding the top 4 
-sum_others <- sum(aoe_counts[5:dim(aoe_counts)[1],]$count)
+sum_others <- sum(aoe_counts[6:dim(aoe_counts)[1],]$count)
 # number of Outcomes
 outcome_count <- briefs %>%
     filter(published <= end, type=="Outcome") %>%
     dim
 aoe_counts <- rbind(aoe_counts,
-                        c("Total others (all but top 4 specialist)",sum_others))
+                        c("Total others (all but top 5 specialist)",sum_others))
 aoe_counts <- rbind(aoe_counts,
                     c("Total Outcomes",outcome_count))
 ```
 `r kable(aoe_counts)`  
-  
+
+# How active is the Marketplace?  
+
 ## Areas of expertise offered  
 
   
@@ -180,8 +316,25 @@ aoe_df <- data.frame(count=aoes)
 ```
 
 `r kable(aoe_df)`  
+## Brief responses  
+```{r,echo=FALSE}
+b_filt <- briefs %>% 
+  filter(openTo=="All",status=="closed")
+br <- briefResponses %>% filter(!is.na(supplierId),applicationDate <= end)
+b_filt$responses <- sapply(b_filt$id,function(x,br) {
+                                       sum(br$id==x)
+                                     },br=br)
+dens <- density(b_filt$responses,from=0)
+plot_ly(x=dens$x,y=dens$y,type="scatter",mode="lines") %>%
+    layout(title="Distribution of responses",
+         yaxis=list(visible=FALSE))
 
-## Contracts by seller  
+```
+Average number of responses: `r round(mean(b_filt$responses))`  
+(To all Open to All and closed briefs - **figure is not limited to the dates in the report**)  
+
+
+# Who is winning the work?  
 
 ```{r,echo=FALSE}
 m_c <- contracts %>%
@@ -198,6 +351,11 @@ fy_others <- fy_contracts[11:dim(fy_contracts)[1],] %>%
 
   
 ```
+  
+#### Contracts to SMEs for this month  
+`r kable(m_by_sme,digits=1)`  
+
+
 ### Current financial year  
 #### Top ten sellers
 `r kable(fy_contracts[1:10,])`  

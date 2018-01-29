@@ -17,18 +17,24 @@ knitr::opts_chunk$set(echo = TRUE)
 if (!exists("buyers")) {
   source("utilities.r")
   source("plotly_functions.r")
+  source("assorted_functions.r")
   library(knitr)
   library(tidyr)
   library(RColorBrewer)
   library(dplyr)
   library(plotly)
   ## load the files - ensure these files are already produced
-  load(paste0(getwd(),"/../data/",substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
+  #load(paste0(getwd(),"/../data/",substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
+  load(paste0(getwd(),"\\..",rel_path_data,substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
 }
 
 # filter inactive buyers
 buyers <- buyers[buyers$active==TRUE,]
 buyers <- buyers[!grepl("\\+",buyers$email_address),]
+# need a better function to determine close date
+#briefs$close <- briefs$published + 7.5
+#briefs[briefs$duration=="2 weeks","close"] <- 
+#  briefs[briefs$duration=="2 weeks","close"] + 7
 
 ```
 **run date: `r date_to_string(Sys.Date())`**  
@@ -37,84 +43,73 @@ buyers <- buyers[!grepl("\\+",buyers$email_address),]
 ---   
 
 ## Current briefs  
-  
+
+### Open to selecteds  
+`r kable(invited_sellers(briefs,briefResponses))`  
+
   
 ### Currently Live  
 ```{r echo=FALSE}
 bl <- briefs[briefs$status=="live",] # 
-bl$closes <- string_to_date(bl$published) + 7
-bl[bl$duration=="2 weeks","closes"] <- bl[bl$duration=="2 weeks","closes"] + 7.5
+#bl$closes <- string_to_date(bl$published) + 7
+#bl[bl$duration=="2 weeks","closes"] <- bl[bl$duration=="2 weeks","closes"] + 7.5
+bl$closes <- bl$close
 bl <- bl[,c("id","title","organisation","openTo","type","closes")]
 b_apps <- briefResponses[!is.na(briefResponses$applicationId),] %>% 
   group_by(id) %>% 
   summarise(applications = length(id))
 bl <- merge(bl,b_apps,by.x="id",by.y="id",all.x=TRUE) %>% arrange(closes)
 bl[is.na(bl)] <- 0
-bl$closes     <- date_to_string(bl$closes)
+#bl$closes     <- date_to_string(bl$closes)
 #bl <- bl[order(bl$closes),]
 ```
+  
+Number of open briefs: `r dim(bl)[1]`  
+
 `r kable(bl,row.names=FALSE)`  
   
 ### Recently Closed  
 ```{r echo=FALSE}
 brc <- briefs[briefs$status=="closed"
                      &(Sys.Date() - string_to_date(briefs$published)) < 30,] 
-brc$brief_closed <- string_to_date(brc$published) + 7
-brc[brc$duration=="2 weeks","brief_closed"] <- 
-                    brc[brc$duration=="2 weeks","brief_closed"] + 7.5
+#brc$brief_closed <- string_to_date(brc$published) + 7
+#brc[brc$duration=="2 weeks","brief_closed"] <- 
+#                    brc[brc$duration=="2 weeks","brief_closed"] + 7.5
+brc$brief_closed <- brc$close
 brc <- brc[,c("id","title","organisation","openTo","type","published","brief_closed")]
 brc <- merge(brc,b_apps,by.x="id",by.y="id",all.x=TRUE)
 brc <- brc[order(brc$brief_closed,decreasing=TRUE),]
-brc$brief_closed <- date_to_string(brc$brief_closed)
+#brc$brief_closed <- date_to_string(brc$brief_closed)
 brc[is.na(brc)] <- 0
 ```
 `r kable(brc,row.names=FALSE)`  
   
 ---  
 
-## Buyers  
-  
-### Buyer and Agency Counts  
-  
-  
-```{r echo=FALSE}
-plot_buyer_counts(buyers,publish=FALSE) 
-agencies <- buyers %>%
-                group_by(category) %>% 
-                summarise(count=length(category))  
-agencies$percent <- round(agencies$count/sum(agencies$count) * 100,digits=1)
-agencies <- rbind(agencies,c("Total buyers",sum(agencies$count),100.0))
-```  
-  
-* Active buyers have signed in or registered in the past 90 days
-
-  
-### Buyer Counts by Agency Category  
-`r kable(agencies)`  
-  
-`r plot_buyer_count_by_agency_category(buyers)`  
-  
-
-  
-### Agency Counts by Category  
-```{r echo=FALSE}
-agencies_counts <- buyers %>%
-                group_by(email_domain,category) %>% 
-                summarise(count=length(email_domain)) %>%
-                group_by(category) %>%
-                summarise(count = length(category))
-agencies_counts$percent <- round(agencies_counts$count/sum(agencies_counts$count) * 100,digits=1)
-agencies_counts <- rbind(agencies_counts,c("Total agencies",sum(agencies_counts$count),100.0))
-
-```
-`r kable(agencies_counts)`     
-  
-`r plot_agency_count_by_category(buyers)`    
-
----   
 
 ## Briefs  
+  
+### Briefs open by date  
+```{r,echo=FALSE}
+count_open_briefs <- function(date,b) {
+  return(sum((b$published <= date)&(b$close >= date)))
+}
+count_open_briefs2 <- function(date,b) {
+  return(sum(b$published <= date) - sum(b$close < date))
+}
 
+dsl <- datesSinceLaunch()$dates
+x <- sapply(dsl,count_open_briefs,b=briefs)
+y <- briefs %>% group_by(published) %>% summarise(count=n())
+
+plot_ly(x=dsl,y=~x,mode="lines",type="scatter",name="briefs open") %>% 
+  add_trace(data=y,x=~published,y=~count,type="bar",name="briefs published") %>%
+  layout(title="Brief publishing",
+         xaxis=list(title=""),
+         yaxis=list(title="Count"))
+```
+  
+  
 ### Published briefs
 ```{r echo=FALSE}
 #b <- briefs[!duplicated(briefs[,c("id"),]),]
@@ -218,7 +213,7 @@ p <- p %>% add_annotations(
 ```{r,echo=FALSE}
 x <- briefResponses %>% filter(openTo=="All") %>% group_by(id) %>% summarise(responses = length(id))
 dens <- density(x$responses,from=0)
-dens$y <- dens$y / (max(dens$y)) * 20
+dens$y <- dens$y / (max(dens$y)) * 33
 plot_ly(x=x$responses,type="histogram",name="histogram") %>% 
   add_lines(x=dens$x,y=dens$y,name="smoothed") %>%
   layout(title="Seller Applications per Brief",xaxis=list(title="Applications"),
@@ -234,13 +229,13 @@ Min. | 1st Quartile | Median | Mean | 3rd Quartile | Max.
       
 ### Publishing Agencies  
 ```{r echo=FALSE}
-b <- briefs[briefs$id > 0,c("id","organisation","buyerEmail")]
+b <- briefs[briefs$id > 0,c("id","organisation","buyerEmail","email_domain")]
 b <- b[!duplicated(b$id),]
-b$domain <- matrix(unlist(strsplit(b$buyerEmail,"@")),ncol=2,byrow=TRUE)[,2]
-counts <- b %>% group_by(domain) %>%
+#b$domain <- matrix(unlist(strsplit(b$buyerEmail,"@")),ncol=2,byrow=TRUE)[,2]
+counts <- b %>% group_by(email_domain) %>%
   summarise(count = length(id), agency = organisation[1]) %>%
   arrange(desc(count))
-counts$domain <- factor(counts$domain,levels=counts$domain) 
+counts$email_domain <- factor(counts$email_domain,levels=counts$email_domain) 
 #plot_ly(counts,x=~count,y=~domain,type="bar",orientation='h') %>%
 #  layout(yaxis = list(title = #'',tickfont=list(color="darkblue"),font='arial',size=12),
 #         xaxis = list(title = ''),
@@ -262,7 +257,7 @@ counts$domain <- factor(counts$domain,levels=counts$domain)
 ## Sellers  
   
 ### Seller Activity  
-`r plot_application_counts_by_seller(briefResponses)`  
+`#r plot_application_counts_by_seller(briefResponses)`  
 <br>  
 ```{r, echo=FALSE}
 sellers$applied <- sellers$code %in% briefResponses$supplierId
@@ -301,18 +296,39 @@ totes <- dsppAP+dsppNS+dsppST+dsppSU + dmpASS+dmpPROD+dmpREG
   
 ```{r,echo=FALSE}
 s <- sellers %>% 
-  #filter(dmp_framework) %>% 
+  group_by(number_of_employees,joined) %>% 
   arrange(joined) %>% 
-  mutate(number = 1:length(joined))
-plot_ly(s,x=~joined,y=~number,type="scatter",mode="lines") %>%
-    layout(title="Number of registered sellers over time",
+  summarise(count = length(number_of_employees)) %>% 
+  mutate(csum = cumsum(count))
+s$number_of_employees <- factor(s$number_of_employees)
+p <- plot_ly(s,x=~joined,y=~csum,type="scatter",mode="lines",
+             color=~number_of_employees,
+             colors=brewer.pal(9,"Set1")) %>%
+      layout(title="Number of registered sellers over time",
            xaxis=list(title=""),
            yaxis=list(title="Count"))
+p
+s <- sellers %>%
+  arrange(joined)
+s$csum <- 1:dim(s)[1]
+plot_ly(s,x=~joined,y=~csum,type="scatter",mode="lines") %>%
+      layout(title="Number of registered sellers over time",
+           xaxis=list(title=""),
+           yaxis=list(title="Count"))
+lm <- lm(csum~joined,data=s[444:dim(s)[1],])
+#s <- sellers %>% 
+  #filter(dmp_framework) %>% 
+#  arrange(joined) %>% 
+#  mutate(number = 1:length(joined))
+#plot_ly(s,x=~joined,y=~number,type="scatter",mode="lines") %>%
+#    layout(title="Number of registered sellers over time",
+#           xaxis=list(title=""),
+#           yaxis=list(title="Count"))
 
 
 ```
   
-Shows all sellers who are *currently on the Marketplace* based on when they were added as a seller. Note that this shows registered sellers, not all of these will be active.  
+Shows all sellers who are *currently on the Marketplace* based on when they were added as a seller, and split by the nunber of employees each has. Note that this shows registered sellers, not all of these will be active.  
   
   
 ### Seller composition  
@@ -422,5 +438,48 @@ plot_ly(x=a$days_since_sub,type="histogram",nbinsx=20) %>%
 
 ```
   
+---  
+  
+## Buyers  
+  
+### Buyer and Agency Counts  
+  
+  
+```{r echo=FALSE}
+plot_buyer_counts(buyers,publish=FALSE) 
+agencies <- buyers %>%
+                group_by(category) %>% 
+                summarise(count=length(category))  
+agencies$percent <- round(agencies$count/sum(agencies$count) * 100,digits=1)
+agencies <- rbind(agencies,c("Total buyers",sum(agencies$count),100.0))
+```  
+  
+* Active buyers have signed in or registered in the past 90 days
+
+  
+### Buyer Counts by Agency Category  
+`r kable(agencies)`  
+  
+`r plot_buyer_count_by_agency_category(buyers)`  
+    
+
+  
+### Agency Counts by Category  
+```{r echo=FALSE}
+agencies_counts <- buyers %>%
+                group_by(email_domain,category) %>% 
+                summarise(count=length(email_domain)) %>%
+                group_by(category) %>%
+                summarise(count = length(category))
+agencies_counts$percent <- round(agencies_counts$count/sum(agencies_counts$count) * 100,digits=1)
+agencies_counts <- rbind(agencies_counts,c("Total agencies",sum(agencies_counts$count),100.0))
+
+```
+`r kable(agencies_counts)`     
+  
+`r plot_agency_count_by_category(buyers)`    
+
+---   
+
 
 

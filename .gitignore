@@ -3,7 +3,8 @@
 .Rapp.history
 
 # Session Data files
-.RData
+*.RData
+*.Rdata
 
 # Example code in package build process
 *-Ex.R
@@ -22,7 +23,7 @@ vignettes/*.html
 vignettes/*.pdf
 
 # OAuth2 token
-.httr-oauth
+*.httr-oauth
 
 # knitr and R markdown default cache directories
 /*_cache/
@@ -30,6 +31,10 @@ vignettes/*.pdf
 
 # one off scripts - don't require source control
 /scratch/
+
+# none of the data files or reports should ever be uploaded
+/data/
+/reports/
 
 # Temporary files created by R markdown
 *.utf8.md
