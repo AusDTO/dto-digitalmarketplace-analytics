@@ -1,5 +1,4 @@
 # configuration
-#prod_api_url <- "https://dm-api.apps.platform.digital.gov.au/api/"
 prod_api_url <- "https://dm-api.apps.b.cld.gov.au/api/"
 
 domains <- c("Software engineering and Development",
@@ -12,10 +11,17 @@ domains <- c("Software engineering and Development",
              "Support and Operations",
              "Data science",
              "Emerging technologies",
-             "Marketing, Communications and Engagement")
-log_filename <- "MKT_reporting_log.csv"
-rel_path_data <- "\\..\\data\\"
+             "Marketing, Communications and Engagement",
+             "Change and Transformation",
+             "Training, Learning and Development")
+log_filename     <- "MKT_reporting_log.csv"
+rel_path_data    <- "\\..\\data\\"
+rel_path_reports <- "\\reports\\"
 attachments_introduced <- as.Date("2017-04-04")
+dmp_sons         <- c("SON3413842","SON3364729")
+
+standard_objects <- c("users","buyers","sellers","case_studies","briefResponses",
+                      "apps","assessments","contracts","feedback","briefs")
 
 prod_api <- function(name) {
   return(paste0(prod_api_url,name))
@@ -96,24 +102,36 @@ fetchAllFromAPI <- function(getURL,auth,x) {
   x
 }
 
-# extracts an email out of a list
-email <- function(x) {
-  x$email
-}
-
-# extracts an name out of a list
-name <- function(x) {
-  x$name
-}
-
 # writes a data frame to a CSV file with label YYYYMMDD-suffix.csv
 writey <- function(x,suffix,includeHeader=TRUE, quote=TRUE, sep=",") {
   write.table(x,file=paste(getwd(),rel_path_data,substr(as.POSIXct(Sys.time()),1,10),"-",suffix,".csv",sep=""),
               sep=sep,quote=quote,row.names=FALSE,col.names=includeHeader)
 }
 
-format_mil <- function(x,digits=2) {
-  return (paste("$",round(x/1000000,digits=digits),"M",sep=""))
+
+# writes a data frame to the reporting directory so thy can be accessed through the mkt-reporting
+# web server
+writer <- function(x,name) {
+  write.table(x,
+              file=paste0(getwd(),rel_path_reports,name,".csv"),
+              sep=",",
+              quote=TRUE,
+              row.names=FALSE,
+              col.names=TRUE)
+}
+
+# save each raw extract file as they're downloaded to avoid re-running the fetch-all functions that day 
+# new files overwrite previous versions.
+temp_save <- function(obj,obj_name) {
+  save(obj,file = paste0(getwd(),rel_path_data,obj_name,"-raw.rdata"))
+}
+
+format_mil <- function(x,digits=2,order="M",dollars="$") {
+  if (order=="M") {
+    return (paste(dollars,round(x/1000000,digits=digits),"M",sep=""))
+  } else {
+    return (paste(dollars,round(x/1000,digits=digits),"K",sep=""))
+  }
 }
 
 # writes a dataframe to a Google Sheet
@@ -197,7 +215,7 @@ translate_specialist_role <- function(vec) {
                "User research and Design",
                "User research and Design",
                "Software engineering and Development",
-               "Change, Training and Transformation",
+               "Change and Transformation",
                "User research and Design",
                "Agile delivery and Governance",
                "Software engineering and Development",
@@ -242,6 +260,40 @@ timestamps <- function(objects) {
     }
     return(NA)
   })
-  ts <- ts[!is.na(ts)]
+  ts <- ts[names(ts) %in% standard_objects]
+  #ts <- ts[!is.na(ts)]
   print(tibble(object=names(ts),ts=ts))
 }
+
+domains_from_emails <- function(emails) {
+  split <- str_split(emails,"@")
+  sapply(split,function(x) x[2])
+}
+
+# compare contents in 2 vectors
+compare_vectors <- function(a,b,print=TRUE) {
+  if (print) {
+    cat("Common elements\n")
+    print(a[a %in% b])
+    cat("\nIn vector 1 only\n")
+    print(a[!a %in% b])
+    cat("\nIn vector 1 only\n")
+    print(b[!b %in% a])
+  } else {
+    return(list(
+      common        = a[a %in% b],
+      vector_a_only = a[!a %in% b],
+      vector_b_only = b[!b %in% a]
+    ))
+  }
+}
+
+generate_seller_contact_list <- function(sellers,users) {
+  l <- users %>%
+    filter(!is.na(seller_id),active) %>% #active users with a seller ID
+    select(seller_id,email_address) %>%
+    right_join(sellers,by=c("seller_id"="code"))
+  unique(c(str_to_lower(l$email_address),
+           str_to_lower(l$contact_email),
+           str_to_lower(l$auth_rep_email)))
+}  

@@ -134,7 +134,7 @@ plot_violins_of_day_rates <- function(bR) {
                                     dayRate > 450,dayRate < 4000)
   add_density_plot <- function(p,bR,i,color) {
     #  dens <- density(bR$dayRate,na.rm=TRUE,from=(min(bR$dayRate)-100))
-    dens <- density(bR$dayRate,na.rm=TRUE,from=350,to=2750)
+    dens <- density(bR$dayRate,na.rm=TRUE,from=350,to=3000)
     up   <- dens$y/max(dens$y) + (i*3 + 2)
     down <- (i*3 + 2) - dens$y/max(dens$y)
     n    <- bR[1,"areaOfExpertise"]
@@ -162,7 +162,7 @@ plot_violins_of_day_rates <- function(bR) {
                name="All areas",
                color=brewer.pal(10,"Paired")[1])
   p <- p %>% add_lines(x=all_dens$x,y=down,mode="line",
-                       color=brewer.pal(10,"Paired")[1],
+                       color=brewer.pal(12,"Paired")[1],
                        fill = "tonexty",
                        showlegend=FALSE)
   areas <- as.character(resps[resps$`Number of Responses`>10,]$`Area of Expertise`)
@@ -171,7 +171,7 @@ plot_violins_of_day_rates <- function(bR) {
     p <- add_density_plot(p,
                           vals[vals$areaOfExpertise==areas[i],],
                           i,
-                          brewer.pal(10,"Paired")[i+1])
+                          brewer.pal(12,"Paired")[i+1])
     #  }
   }
   p <- p %>% layout(xaxis=list(range=c(0,3000),
@@ -287,6 +287,60 @@ plot_briefs_published <- function(b) {
            yaxis = list(title = "briefs published",showgrid = TRUE))
 }
 
+plot_briefs_published_by_type <- function(b) {
+  b <- b[order(b$published),] %>%
+    arrange(published) %>%
+    mutate(one=1,total=cumsum(one))      %>%
+    group_by(type)     %>%
+    mutate(one=1, published_by_type = cumsum(one))
+  b_o <- b[b$type=="Outcome",]
+  b_s <- b[b$type=="Specialist",]
+  # calculate a polynomial trend line from DMP launch up to the last month
+  end_date   <- floor_date(Sys.Date(),"month")
+  #end_date   <- Sys.Date()
+  start_date <- as.Date("2017-06-30")
+  months     <- interval(start_date,end_date) %/% months(1)
+  x_a        <- sum(b$published <= start_date)
+  x_b        <- sum(b$published <= end_date)
+  perc       <- 10^(log10(x_b/x_a)/months) - 1
+  months     <- data.frame(months = seq(start_date,ceiling_date(Sys.Date(),"month"),by="months"))
+  months$count <- 0:(nrow(months)-1)
+  months$estimate <- x_a * (1+perc) ^ months$count
+  ##   
+  plot_ly(data=b,y=~total,x=~published,mode="lines",type="scatter",
+          #color=brewer.pal(3,"Dark2")[1])
+          colors=brewer.pal(3,"Dark2"),
+          name="Total") %>% 
+    add_trace(x=b_o$published,y=b_o$published_by_type, name="Outcomes") %>%
+    add_trace(x=b_s$published,y=b_s$published_by_type, name="Specialists") %>%
+    add_trace(x=months$months,y=months$estimate,
+              name=paste("Growth at",round(perc*100),"%"),
+              line=list(dash='dot')) %>%
+    layout(title = 'Briefs published by date',
+           xaxis = list(title = "",showgrid = TRUE),
+           yaxis = list(title = "briefs published",showgrid = TRUE))
+}
+
+plot_brief_type_as_percentage <- function(briefs) {
+  b <- briefs %>%
+    #mutate(total = 1:n()) %>%
+    arrange(published) %>%
+    group_by(published,type) %>%
+    summarise(total_by_type_per_day=n())
+  b$total_per_day <- cumsum(b$total_by_type_per_day)
+  b <- b %>%
+    group_by(type) %>%
+    mutate(published_by_type = cumsum(total_by_type_per_day),
+           cumpercent        = 100*published_by_type/total_per_day)
+  
+  plot_ly(data=b,y=~cumpercent,x=~published,mode="lines",type="scatter",
+          color=~b$type,
+          colors=c("#EC9898","#6F65A6")) %>%     
+    layout(title = 'Ratio of brief types over time',
+           xaxis = list(title = "",showgrid = TRUE),
+           yaxis = list(title = "percentage",showgrid = TRUE))
+}
+
 plot_bids_by_specialist_brief <- function(bR) {
   bR$dayRate <- as.numeric(bR$dayRate)
   bR <- bR[bR$openTo=="All"
@@ -300,7 +354,8 @@ plot_bids_by_specialist_brief <- function(bR) {
   plot_ly(bR,y=~dayRate,x=~index,type="scatter",mode="markers",
           color=bR$frameworkFramework,
           colors=c("#EC9898","#6F65A6"),
-          text = paste("ID:",bR$id,"<br />",bR$title)) %>%
+          text = paste("ID:",bR$id,"<br />",bR$title),
+          marker = list(size=3)) %>%
     #add_trace(data=avDR,y=~average,mode="lines",name="average per brief") %>%
     layout(title = 'Seller bids',
            xaxis = list(title = "Brief",
@@ -327,4 +382,21 @@ plot_distribution_of_specialist_bids <- function(bR) {
     add_histogram(data=bR[bR$frameworkFramework=="dm",],x=~dayRate,name="DMP") %>%
     add_trace(x=densDSP$x,y=densDSP$y,name="DSPP smoothed", type="scatter",mode="lines") %>%
     add_trace(x=densDMP$x,y=densDMP$y,name="DMP smoothed", type="scatter",mode="lines")
+}
+
+plot_agencies_publishing_per_period <- function(briefs) {
+  x <- briefs %>%
+    group_by(month=floor_date(published,"month"),entities) %>%
+    summarise(count=length(unique(agencyName))) %>%
+    spread(entities,count,fill=0) %>%
+    gather(key="entities",value="count",CCE:State,factor_key = TRUE) %>%
+    arrange(month)
+  x <- as.data.frame(x) # plotly doesn't seem to like tibbles :-(
+  plot_ly(data=x,x=~month,y=~count,mode="lines",type="scatter",
+          color=~entities,colors=brewer.pal(5,"Set1")) %>%
+    layout(title = 'Agencies publishing briefs per month',
+           xaxis = list(title = "",
+                        showgrid = TRUE),
+           yaxis = list(title = "Number of agencies",
+                        showgrid = TRUE))
 }

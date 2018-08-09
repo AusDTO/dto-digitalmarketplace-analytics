@@ -19,10 +19,13 @@ if (!exists("header")) {
 
 timestamp      <- Sys.time()
 
-users          <- extract_users(header,FALSE) # FALSE = don't include DMP team logins
+users          <- extract_users(header,TRUE) # FALSE = don't include DMP team logins
 buyers         <- process_buyers(users, FALSE) # TRUE - update the buyer spreadsheet
 contributors   <- process_contributors(users)
-sellers        <- extract_sellers(header) #%>% process_sellers()
+    s_list     <- extract_sellers(header) 
+sellers        <- s_list$sellers
+case_studies   <- s_list$case_studies
+    s_list     <- NULL
 briefsExtract  <- extract_briefs(header,FALSE)
 briefs         <- process_briefs(briefsExtract,buyers,FALSE)
 briefResponses <- extract_brief_responses(header) %>% process_brief_responses(briefs)
@@ -31,7 +34,8 @@ assessments    <- extract_assessments(header)
 all_sellers    <- process_sellers_and_applications(sellers,apps,users)
 contracts      <- extract_austender() %>% process_contracts(sellers)
 feedback       <- extract_feedback(header)
-sellerMailList <- process_seller_email_list(sellers,contributors,apps)
+agency_summary <- process_agency_summary(buyers,briefs,contracts)
+#sellerMailList <- process_seller_email_list(sellers,contributors,apps)
 
 # write useful observations to a log  
 log_current_observations(timestamp)
@@ -48,6 +52,7 @@ if (FALSE) {
   rmarkdown::render("R\\dto_dashboard.rmd",output_dir=paste0(getwd(),"\\reports\\"))
   rmarkdown::render("R\\snapshot.rmd",output_dir=paste0(getwd(),"\\reports\\"))
   rmarkdown::render("R\\transactions.rmd",output_dir=paste0(getwd(),"\\reports\\"))
+  rmarkdown::render("R\\pricing_analysis.rmd",output_dir=paste0(getwd(),"\\reports\\"))
 }
 
 # Use to reload data rather than extract from scratch if restarting a session. 

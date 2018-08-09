@@ -4,12 +4,26 @@
 # extract all registered users, and remove those that are inactive
 # this includes both buyers and sellers
 extract_users <- function(header,include_dta_users = FALSE) {
-  user_column_names <- c("id","seller_id","application_id","name","email_address","active","role","locked","created_at","logged_in_at")
+  user_column_names <- c("id","seller_id","application_id","name","email_address","active",
+                         "role","locked","created_at","logged_in_at","frameworks")
   
   # reprocess users into a data frame without embedded lists
   process_users <- function(df) {
+    extract_framework <- function(x) {
+      if (is.null(nrow(x))) {return(NA)}
+      if (nrow(x)==0) {
+        return(NA)
+      }
+      if (nrow(x) > 1) {
+        print("user with > 1 framework")
+      }
+      return(x[1,]$framework_id)
+    }
     # exclude 'applicants' for now
     users           <- df[df$role %in% c("buyer","supplier","admin","applicant"),]
+    if (!is.null(users$frameworks)) {
+      users$frameworks <- sapply(users$frameworks,extract_framework)
+    }
     # this can be entirely NAs, which will cause an error
     if (is.vector(users$supplier)) {
       users$seller_id <- NA
@@ -23,12 +37,19 @@ extract_users <- function(header,include_dta_users = FALSE) {
   #users_query  <- "https://dm-api.apps.platform.digital.gov.au/api/users"
   users_query  <- prod_api("users")
   users_raw    <- fetchAllFromAPI(users_query,header,list())
+  temp_save(users_raw,"Users")
   users        <- bind_rows(lapply(users_raw,process_users))
   # and some post-processing
-  users$email_domain    <- matrix(unlist(strsplit(users$email_address,"@")),ncol=2,byrow=TRUE)[,2]
-  #users <- users[users$active==TRUE,]
-  users$created_at   <- as.Date(users$created_at)
-  users$logged_in_at <- as.Date(users$logged_in_at)
+  users$email_domain <- str_split(users$email_address,"@",simplify=TRUE)[,2]
+  users[is.na(users$frameworks),]$frameworks <- 7
+  # filters
+  users <- users %>% filter(frameworks == 7)
+  #  filter(active) %>%
+    
+  #users$created_at   <- as.Date(users$created_at)
+  users$created_at   <- parse_utc_timestamp_date(users$created_at)
+  #users$logged_in_at <- as.Date(users$logged_in_at)
+  users$logged_in_at <- parse_utc_timestamp_date(users$logged_in_at)
   #names(users) <- c("active","created_at","email_address","user_id","logged_in_at","user_name","role")
   attr(users,"timestamp") <- Sys.time()
   if (include_dta_users) {
@@ -38,18 +59,31 @@ extract_users <- function(header,include_dta_users = FALSE) {
   return(users[!grepl("\\+",users$email_address),]) 
 }
 
-extract_sellers <- function(header) {
+extract_sellers <- function(header,include_deleted = FALSE) {
   seller_columns <- c("code","name","abn","joined","website",
-                      "contact_email","email_domain","application_id","assessed_aoe","unassessed_aoe","legacy_aoe",
-                      "product_only","dmp_framework","number_of_employees","sme_by_employees","sme_badge",
+                      "contact_email","auth_rep","auth_rep_email","email_domain","application_id",
+                      "assessed_aoe","unassessed_aoe","legacy_aoe",
+                      "product_only","dmp_framework","no_of_case_studies","number_of_employees",
+                      "sme_by_employees","sme_badge",
                       "is_recruiter","regional","start_up","female_owned","indigenous",
                       "address_line","suburb","state","country","postal_code",
                       "gov_exp_federal","gov_exp_international","gov_exp_local","gov_exp_state",
-                      "gov_exp_no_experience","creation_time","liability_exp","work_comp_exp")
+                      "gov_exp_no_experience","creation_time","liability_exp","work_comp_exp",
+                      paste0("maxPrice.",gsub(" ","_",domains)))
   
   process_raw_sellers <- function(df) {
     df <- df[!is.na(df$status),]        # filter out the ORAMS sellers
-    df <- df[df$status != "deleted",]
+    if (!include_deleted) { 
+      df <- df[df$status != "deleted",]
+    }  
+    # pricing comes out of the JSON as a set of 1 column data frames
+    process_pricing <- function(x) {
+      for (i in 1:dim(x)[2]) {
+        x[,i] <- as.numeric(x[,i]$maxPrice)
+      }
+      names(x) <- paste0("maxPrice.",gsub(" ","_",names(x)))
+      x
+    }
     
     frameworks <- function(x) {
       #if frameworks is a data frame with any rows, then the seller is in the new framework
@@ -63,13 +97,17 @@ extract_sellers <- function(header) {
     df$assessed_aoe   <- unlist(lapply(df$domains$assessed,function(x) {paste(x,collapse="|")}))
     df$unassessed_aoe <- unlist(lapply(df$domains$unassessed,function(x) {paste(x,collapse="|")}))
     df$legacy_aoe     <- unlist(lapply(df$domains$legacy,function(x) {paste(x,collapse="|")}))
+    df$auth_rep       <- df$representative
+    df$auth_rep_email <- df$email
+    df$email_domain   <- domains_from_emails(df$auth_rep_email)
     df$product_only   <- df$assessed_aoe=="" & df$unassessed_aoe==""
     df[is.na(df$number_of_employees),"number_of_employees"] <- "unknown"
     # this is SME determined by the declared number of employees
     df$sme_by_employees <- !df$number_of_employees %in% c("unknown","200+")
     df$dmp_framework  <- unlist(lapply(df$frameworks,frameworks))
-    df$contact_email  <- unlist(lapply(df$contacts,function(x) {x$email}))
-    df$email_domain   <- matrix(unlist(strsplit(df$contact_email,"@")),ncol=2,byrow=TRUE)[,2]
+    #df$contact_email  <- unlist(lapply(df$contacts,function(x) {x$email}))
+    df$contact_email  <- df$contact_email
+    #df$email_domain   <- matrix(unlist(strsplit(df$contact_email,"@")),ncol=2,byrow=TRUE)[,2]
     sts               <- df$seller_type
     # this is the SME status that the seller has indicated themselves. Not all sellers
     # who are SMEs have selected the badge
@@ -81,6 +119,14 @@ extract_sellers <- function(header) {
     df$joined         <- as.Date(df$creation_time)
     df$liability_exp  <- as.Date(df$documents$liability$expiry)
     df$work_comp_exp  <- as.Date(df$documents$workers$expiry)
+    df$is_recruiter   <- as.logical(df$is_recruiter)
+    df$no_of_case_studies <- sapply(df$case_study_ids,length)
+    if (!is.null(df$pricing)) {
+      if (dim(df$pricing)[2] > 0) {
+        p  <- process_pricing(df$pricing)
+        df <- cbind(df,p)
+      }
+    }
     df <- df[,names(df) %in% seller_columns]
     # might want to write some other lines to extract the addresses, contacts etc
     df
@@ -89,10 +135,12 @@ extract_sellers <- function(header) {
   #sellers_query <- "https://dm-api.apps.platform.digital.gov.au/api/suppliers"
   sellers_query <- prod_api("suppliers")
   sellers_raw   <- fetchAllFromAPI(sellers_query,header,list())
+  temp_save(sellers_raw,"Sellers")
+  case_studies  <- extract_case_studies(sellers_raw)
   sellers       <- bind_rows(lapply(sellers_raw,process_raw_sellers))
   sellers       <- fill_logicals(sellers)
   attr(sellers,"timestamp") <- Sys.time()
-  return(sellers)
+  return(list(sellers=sellers,case_studies=case_studies))
 }
 
 extract_briefs  <- function(header, return_all = FALSE) {
@@ -150,6 +198,7 @@ extract_briefs  <- function(header, return_all = FALSE) {
   #brief_query   <- "https://dm-api.apps.platform.digital.gov.au/api/briefs"
   brief_query   <- prod_api("briefs")
   briefsRawList <- fetchAllFromAPI(brief_query,auth(header),list())
+  temp_save(briefsRawList,"Briefs")
   #briefsRaw    <- combineBriefs(data.frame(),briefsRawList)
   briefsRaw     <- bind_rows(lapply(briefsRawList,processBriefs))
   briefsRaw     <- postProcessBriefs(briefsRaw)
@@ -208,6 +257,7 @@ extract_brief_responses <- function(header) {
     df$applicationDate        <- as.Date(df$createdAt)
     if ("attachedDocumentURL" %in% names(df)) {
       df$attachments            <- sapply(df$attachedDocumentURL,length)
+      #df$attachments            <- sapply(df$attachedDocumentURL,function(x) {paste(x,collapse="|")})
     } else {
       df$attachments            <- 0
     }
@@ -217,16 +267,18 @@ extract_brief_responses <- function(header) {
   #responsesquery        <- "https://dm-api.apps.platform.digital.gov.au/api/brief-responses"
   responsesquery        <- prod_api("brief-responses")
   bapps                 <- fetchAllFromAPI(responsesquery,auth(header),list())
+  temp_save(bapps,"BriefResponses")
   briefResponses        <- bind_rows(lapply(bapps,processBriefResponses))
   #names(briefResponses) <- c("availability","briefId","createdAt","dayRate",
   #                           "essentialRequirements","applicationId","niceToHaveRequirements",
   #                           "respondToEmailAddress","supplierId","supplierName","applicationDate")       
   #re-order columns
   briefResponses        <- briefResponses[,c("briefId","id","applicationDate","supplierCode","supplierName",
+                                             "specialistName",
                                              "availability","dayRate","essentialRequirements","niceToHaveRequirements",
                                              "respondToEmailAddress","attachments",
                                              "createdAt")]
-  names(briefResponses) <- c("briefId","applicationId","applicationDate","supplierId","supplierName",
+  names(briefResponses) <- c("briefId","applicationId","applicationDate","supplierId","supplierName","specialistName",
                              "availability","dayRate","essentialRequirements","niceToHaveRequirements",
                              "respondToEmailAddress","attachments",
                              "createdAt")
@@ -245,6 +297,16 @@ extract_applications <- function(header) {
                 "conflicts_of_interest","insurance_claims","investigations","legal_proceedings","structual_changes")
   
   process_applications <- function(df) {
+    
+    # pricing comes out of the JSON as a set of 1 column data frames
+    process_pricing <- function(x) {
+      for (i in 1:dim(x)[2]) {
+        x[,i] <- as.numeric(x[,i]$maxPrice)
+      }
+      names(x) <- paste0("maxPrice.",gsub(" ","_",names(x)))
+      x
+    }
+
     signed_at <- function(x) {
       if (length(x) > 0) {
       #  return(x[dim(x)[1],]$signed_at)
@@ -256,7 +318,11 @@ extract_applications <- function(header) {
     df$local_government_experience   <- NULL
     df$state_government_experience   <- NULL
     df$sme               <- NULL
-    df$existing          <- !is.na(df$supplier_code)
+    if (is.null(df$supplier_code)) {
+      df$existing          <- FALSE
+    } else {
+      df$existing          <- !is.na(df$supplier_code)
+    }
     df$links             <- NULL
     df$createdAt         <- NULL
     df$created_at_date   <- as.Date(df[,"created_at"])
@@ -271,7 +337,7 @@ extract_applications <- function(header) {
     df$assessed_domains  <- NULL
     df$awards            <- NULL
     df$boards            <- NULL
-    df$number_case_studies <- unlist(lapply(df$case_studies,length))
+    #df$number_case_studies <- unlist(lapply(df$case_studies,length))
     df$case_studies      <- NULL
     df$case_study_ids    <- NULL
     df$certifications    <- NULL
@@ -312,13 +378,29 @@ extract_applications <- function(header) {
     df$margin            <- NULL
     df$markup            <- NULL
     df$address_id        <- NULL
-    df$conflicts_of_interest_details <- NULL
     df$expiry_dates      <- NULL
+    df$conflicts_of_interest <- NULL
+    df$insurance_claims      <- NULL
+    df$investigations        <- NULL
+    df$legal_proceedings     <- NULL
+    df$structual_changes     <- NULL
+    df$conflicts_of_interest_details <- NULL
     df$insurance_claims_details      <- NULL
     df$investigations_details        <- NULL
     df$legal_proceedings_details     <- NULL
     df$structual_changes_details     <- NULL
     df$travel            <- NULL
+    #df$pricing           <- NULL
+    if (!is.null(df$pricing)) {
+      if (dim(df$pricing)[2] > 0) {
+        p  <- process_pricing(df$pricing)
+        df <- cbind(df,p)
+      }
+    }
+    df$pricing <- NULL
+    if(!is.null(df$is_recruiter)) {
+      df$is_recruiter   <- as.logical(df$is_recruiter)
+    }
     df[!is.na(df$submitted_at)&df$status=="saved","status"] <- "reverted"
     return(df)
   }
@@ -329,15 +411,16 @@ extract_applications <- function(header) {
     df$submitted_at   <- as.POSIXct(df$submitted_at,format="%Y-%m-%dT%H:%M:%S", tz="UTC")
     df$created_at     <- as.POSIXct(df$created_at,format="%Y-%m-%dT%H:%M:%S",tz="UTC")
     # remove the NAs by changing to FALSE - removing as now done in process function
-    x <- df[,logicals]
+    x <- df[,names(df) %in% logicals]
     x[is.na(x)] <- FALSE
-    df[,logicals]  <- x
+    df[,names(df) %in% logicals]  <- x
     return(df)
   }
   
   #apps_query    <- "https://dm-api.apps.platform.digital.gov.au/api/applications"
-  apps_query    <- prod_api("applications")
+  apps_query    <- prod_api("applications?per_page=200")
   apps_raw_list <- fetchAllFromAPI(apps_query,auth(header),list())
+  temp_save(apps_raw_list,"Applications")
   apps          <- bind_rows(lapply(apps_raw_list,process_applications))
   attr(apps,"timestamp") <- Sys.time()
   return(post_process_applications(apps))
@@ -455,14 +538,16 @@ extract_feedback <- function(header) {
     df$date  <- as.Date(df$createdAt)
     df[is.na(df$comment),"comment"] <- ""
     #return(df)
-    df <- de_dupe(df)
+    #df <- de_dupe(df)
     df$cx <- translate(c("easy","ok","difficult"),c(2,1,0),df$difficulty)
+    df$comment <- gsub("\"","\'",df$comment)
     return(df)
   }
   
   #feed_query  <- paste0(prod_api_url,"audit-events?audit-type=feedback")
   feed_query  <- prod_api("audit-events?audit-type=feedback")
   feed_raw    <- fetchAllFromAPI(feed_query,auth(header),list())
+  temp_save(feed_raw,"Feedback")
   #getdata<-GET(url=feed_query, add_headers(Authorization=header))
   #raw <- fromJSON(content(getdata,type="text"))
   feed        <- bind_rows(lapply(feed_raw,process_feedback))
@@ -470,3 +555,124 @@ extract_feedback <- function(header) {
   return(feed)
 }
 
+#extract_work_orders <- function()
+
+extract_single_brief_attachments <- function(brief_id) {
+  b_query <- prod_api(paste0("brief-responses?brief_id=",brief_id))
+  b_raw   <- fetchAllFromAPI(b_query,auth(header),list())[[1]]
+  return(unlist(b_raw$attachedDocumentURL))
+}
+
+# uses 'sellers_raw' which is the raw JSON from within the extract_sellers function
+# this is a list of pages with 10 sellers each
+extract_case_studies <- function(sellers_raw) {
+  #  [1] "approach"         "client"           "created_at"       "id"               "links"           
+  #  [6] "opportunity"      "outcome"          "project_links"    "referee_contact"  "referee_email"   
+  #  [11] "referee_name"     "referee_position" "roles"            "service"          "supplier_code"   
+  #  [16] "timeframe"        "title"           
+  
+  collapse_cs  <- function(x) {paste("- ",x,collapse="\n- ")}
+  
+  process_cs   <- function(css)  {
+    if (is.null(css)|length(css)==0) {
+      NULL
+    } else {
+      t <- 
+        tibble(case_study_id = css$id,
+               seller_id     = css$supplier_code,
+               title         = css$title,
+               client        = css$client,
+               timeframe     = css$timeframe,
+               aoe           = css$service,
+               responsible_for = css$roles,
+               challenge     = css$opportunity,
+               approach      = css$approach,
+               outcomes      = sapply(css$outcome,collapse_cs),
+               links         = sapply(css$project_links,collapse_cs)
+        )
+    }
+  }
+  
+  process_page <- function(page) {
+    cat(".")
+    by_page <- lapply(page$case_studies,process_cs)
+    by_page <- by_page[!sapply(by_page,is.null)]    # remove the nulls
+    bind_rows(by_page)
+  }
+  
+  cs <- bind_rows(lapply(sellers_raw,process_page))
+  cs <- apply(cs,2,function(x) {gsub('"',"'",x)})
+  df <- data.frame(cs,stringsAsFactors = FALSE)
+  df$seller_id     <- as.integer(df$seller_id)
+  df$case_study_id <- as.integer(df$case_study_id)
+  attr(df,"timestamp") <- Sys.time()
+  return(df)
+}
+
+# extract the case studies for submitted applications
+extract_case_studies_from_applications <- function(apps_raw) {
+  #  [1] "approach"         "client"           "created_at"       "id"               "links"           
+  #  [6] "opportunity"      "outcome"          "project_links"    "referee_contact"  "referee_email"   
+  #  [11] "referee_name"     "referee_position" "roles"            "service"          "supplier_code"   
+  #  [16] "timeframe"        "title"           
+  
+  collapse_cs  <- function(x) {paste("- ",x,collapse="\n- ")}
+  
+  process_cs   <- function(css)  {
+    cat(".")
+    if (is.null(css)|length(css)==0) {
+      NULL
+    } else {
+      cat(css$supplier_code)
+      t <- 
+        tibble(
+               title         = css$title,
+               client        = css$client,
+               timeframe     = css$timeframe,
+               aoe           = css$service,
+               responsible_for = css$roles,
+               challenge     = css$opportunity,
+               approach      = css$approach,
+               outcomes      = sapply(css$outcome,collapse_cs)
+        )
+      if (length(css$project_links) > 0) {
+        t$links <- sapply(css$project_links,collapse_cs)
+      }
+      t
+    }
+  }
+  
+  # this will be called once per application - is a list of 0 or more case studies 
+  process_seller_case_studies <- function(seller_case_studies_list,id) {
+    print(dim(seller_case_studies_list))
+    print(id)
+    # process - apps_raw[[]]$case_studies[[x]]
+    #bind_rows(lapply(seller_case_studies_list,process_cs))
+  }
+  
+  
+  process_page <- function(page) {
+    page <- page[page$type=="new",]
+    page <- page[page$status=="submitted",]
+    if (nrow(page)==0) {
+      return(NULL)
+    }
+    cs <- page$case_studies
+    x <- list(length(cs))
+    for (i in 1:length(cs)) {
+      x[[i]] <- process_seller_case_studies(cs[[i]],cs$id[i])
+    }
+    #return(bind_rows(x))
+ }
+  
+  cs <- bind_rows(lapply(apps_raw,process_page)) # 25 pages of 200 applications
+  
+  #cs <- apply(cs,2,function(x) {gsub('"',"'",x)})
+  #df <- data.frame(cs,stringsAsFactors = FALSE)
+  #df$seller_id     <- as.integer(df$seller_id)
+  #df$case_study_id <- as.integer(df$case_study_id)
+  #attr(df,"timestamp") <- Sys.time()
+  #return(df)
+}
+
+extract_work_orders <- function(header) {}

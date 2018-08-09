@@ -17,7 +17,7 @@ update_upload_list <- function(s) {
   
   # Create new batch and write back to the spreadsheet
   s$batch <- max(ws$batch) + 1
-  s$date       <- Sys.Date()
+  s$date       <- date_to_string(Sys.Date())
   s$abn_exempt <- "no"
   updated <- rbind(s[,names(ws)],ws)
   updated <- updated[order(updated$batch),]
@@ -96,12 +96,13 @@ invited_sellers <- function(briefs,briefResponses) {
   return(invitees[order(invitees$closes),])
 }
 
-# generate a list of sellers that can be shared with buyers
+# generate a list of all DMP sellers that can be shared with buyers
 create_seller_list <- function(sellers) {
   s <- sellers %>% 
     filter(dmp_framework,!product_only) %>%
     select(code, name, abn, assessed_aoe, unassessed_aoe,sme_by_employees,indigenous) %>%
-    mutate(aoe = paste(assessed_aoe,unassessed_aoe,sep="|"))
+    mutate(aoe      = paste(assessed_aoe,unassessed_aoe,sep="|"),
+           on_panel = (nchar(assessed_aoe)>1))
   for (i in domains) {
     #strip the commas
     d <- gsub(",","",i)
@@ -110,3 +111,24 @@ create_seller_list <- function(sellers) {
   }
   select(s,-assessed_aoe,-unassessed_aoe,-aoe)
 }
+
+# extract the sellers that are approved to join the Digital Marketplace panel
+sellers_approved_for_dmp <- function(sellers) {
+  sellers %>%
+    filter(dmp_framework) %>%
+    filter(nchar(assessed_aoe)>0)
+}
+
+# filter to the 
+filter_buyers <- function(buyers,includeDTA = FALSE, includeDeactivated = FALSE) {
+  b <- buyers
+  if (!includeDTA) {
+    b <- b %>%
+      filter(!grepl("\\+",email_address))
+  }
+  if (!includeDeactivated) {
+    b <- b %>% filter(active)
+  }
+  return(b)  
+}
+

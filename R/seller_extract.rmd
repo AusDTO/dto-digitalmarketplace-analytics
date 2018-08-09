@@ -1,0 +1,80 @@
+---
+title: "Seller extract"
+output:
+  word_document
+params:
+  seller: 
+    label: seller
+    value: "Seller name"
+    input: textInput
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r,include=FALSE}
+# if rendered in a new R session, load the session values
+if (!exists("buyers")) {
+  source("utilities.r")
+  source("plotly_functions.r")
+  source("assorted_functions.r")
+  library(knitr)
+  library(tidyr)
+  library(RColorBrewer)
+  library(dplyr)
+  library(plotly)
+  #library(kableExtra)
+  ## load the files - ensure these files are already produced
+  load(paste0(getwd(),"\\..",rel_path_data,substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
+}
+```
+  
+
+```{r, echo=FALSE}
+# lookup seller
+s <- sellers %>% filter(grepl(params$seller,name,ignore.case = TRUE))
+if (dim(s)[1] > 1) {
+  print("**Warning, seller is ambiguous. Choose one the following and rerun**")
+  print(s$name)
+}
+s_abn <- s[1,"abn"]
+s_id  <- s[1,"code"]
+s_summary <- tibble(parameter = names(s),value = as.character(s[1,]))
+```  
+**Date of extract: `r date_to_string(Sys.Date())`**    
+  
+#`r s$name`, (ABN: `r s_abn`)  
+
+## Seller details  
+https://marketplace.service.gov.au/supplier/`r s_id`    
+  
+`r kable(s_summary)`  
+
+---  
+
+## Reported Contracts  
+From Austender, which reports contracts awarded to non corporate commonwealth entities over $10K. Recent contracts may not be reported yet.  
+
+
+```{r,echo=FALSE}
+c <- contracts %>% filter(Supplier.ABN==s_abn) %>%
+  select(Agency,CN.ID,Description,Start.Date,End.Date,Value) %>%
+  arrange(Start.Date)
+```
+Total contracts = `r dim(c)[1]`  
+Total value     = `r format_mil(sum(c$Value))`    
+`r kable(c)`
+
+---  
+
+## Applications for briefs  
+```{r, echo=FALSE}  
+br <- briefResponses %>% filter(supplierId==s_id) %>%
+  select(agencyName, title, openTo, type, published) %>%
+  arrange(published)
+```
+Total applications for briefs = `r dim(br)[1]`  
+`r kable(br)`  
+
+  
+

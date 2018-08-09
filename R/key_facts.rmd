@@ -1,0 +1,100 @@
+---
+title: "Digital Marketplace - 'Key Facts'"
+output:
+  html_document:
+    theme: cerulean
+    toc: true
+  pdf_document: default
+  word_document: default
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r,include=FALSE}
+# if rendered in a new R session, load the session values
+if (!exists("buyers")) {
+  source("utilities.r")
+  source("plotly_functions.r")
+  source("assorted_functions.r")
+  library(knitr)
+  library(tidyr)
+  library(RColorBrewer)
+  library(dplyr)
+  library(plotly)
+  library(lubridate)
+  ## load the files - ensure these files are already produced
+  load(paste0(getwd(),"\\..",rel_path_data,substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
+}
+
+# filter inactive buyers
+buyers <- buyers[buyers$active==TRUE,]
+buyers <- buyers[!grepl("\\+",buyers$email_address),]
+# need a better function to determine close date
+
+```
+**`r format(today(), format="%d %B %Y")`**  
+
+## SME figures 
+```{r, echo=FALSE}
+no_panellists <- sum(sellers$dmp_framework&nchar(sellers$assessed_aoe) > 1)
+no_sme        <- sum(sellers$dmp_framework&sellers$sme_by_employees&nchar(sellers$assessed_aoe) > 1)
+perc_sme      <- round(no_sme/no_panellists*100,0)
+tot_spend     <- round(sum(contracts$Value)/1000000,2)
+c <- contracts %>% filter(contracts$sme_by_employees)
+sme_spend     <- round(sum(c$Value)/1000000,2)
+perc_sme_spend <- round(sme_spend/tot_spend*100,0)
+tib           <- tibble('No. of panellists' = no_panellists,
+                        'No. of SMEs'       = no_sme,
+                        '% of SMEs'         = perc_sme,
+                        'Total spend'       = tot_spend,
+                        'Total SME spend'   = sme_spend,
+                        '% of SME spend'    = perc_sme_spend)
+
+```
+`r kable(tib)`  
+
+## Key Facts  
+* The Digital Marketplace is an initiative under the National Innovation and Science
+Agenda. Its purpose is to make is easier for smaller businesses to compete for the
+governments spend, which was $6.2 billion in 2015-16, on information and
+communications technology (ICT) product and services.  
+
+* As at `r format(today(), format="%d %B %Y")`, $`r tot_spend`m of contracts have been reported to AusTender, with
+`r perc_sme_spend` percent of that value awarded to SMEs.  
+
+* As at `r format(today(), format="%d %B %Y")`, the Digital Marketplace has:  
+    + `r dim(sellers)[1]` registered sellers,    
+    + `r dim(buyers)[1]` registered buyers, and  
+    + `r dim(briefs)[1]` opportunities posted.  
+
+## Background:  
+* The Digital Marketplace is a procurement platform that launched on 29 August 2016.   
+
+* Initially, the Digital Marketplace utilised the Digital Services Professionals Panel (DSPP).
+ The Digital Services Professionals Panel was a panel established by the DTA through an
+approach to market published early in 2016, designed as an interim tool prior to the
+Digital Marketplace coming online; however, the Digital Marketplace launched ahead of
+schedule, so used the panel as its underlying procurement method.  
+
+* In February 2017, the DTA went out to market again and published a request for panel to
+AusTender for the Digital Marketplace Panel.  
+
+* In February, the Marketplace also made it possible for sellers to apply online at any time.  
+
+* The Digital Marketplace Panel remains open for new sellers to join, and the Marketplace
+assess applications on an ongoing basis.  
+
+* In April 2017 the Digital Marketplace transitioned to the Digital Marketplace Panel as its
+underlying procurement method.  
+
+```{r,echo=FALSE}
+n_b       <- dim(briefs)[1]
+n_ncce    <- sum(briefs$entities=="NCCE")
+perc_cce <- 100 - round(n_ncce / n_b * 100,0)
+```
+
+* Additionally, `r perc_cce` percent of opportunities published to the Digital Marketplace were from
+agencies that do not report to AusTender, such as corporate commonwealth entities and
+local governments, so the figure of contracts awarded is likely a similar percentage higher.

@@ -48,7 +48,9 @@ latest_contract <- max(sonAll$Publish.Date)
 sonDSP <- sonAll[sonAll$SON.ID=="SON3364729",]
 sonDMP <- sonAll[sonAll$SON.ID=="SON3413842",]
 ```
-**Latest contract in report: `r latest_contract`**  
+**Run date: `r date_to_string(Sys.Date())`  
+**Latest contract in report: `r date_to_string(latest_contract)`  
+
 
 
 ## Briefs Published by Date  
@@ -89,9 +91,9 @@ lm4 <- lm(cumulative_number~published,
 
 points1 <- abline(lm1$coefficients,as.Date("2016-08-01"),as.Date("2017-09-30"))
 points1$X1 <- as.Date(points1$X1,origin="1970-01-01")
-points2 <- abline(lm2$coefficients,as.Date("2017-03-25"),as.Date("2017-12-31"))
+points2 <- abline(lm2$coefficients,as.Date("2017-05-23"),Sys.Date())
 points2$X1 <- as.Date(points2$X1,origin="1970-01-01")
-points3 <- abline(lm3$coefficients,as.Date("2017-01-01"),as.Date("2017-12-31"))
+points3 <- abline(lm3$coefficients,as.Date("2017-04-12"),Sys.Date())
 points3$X1 <- as.Date(points3$X1,origin="1970-01-01")
 points4 <- abline(lm4$coefficients,Sys.Date()-45,Sys.Date()+15)
 points4$X1 <- as.Date(points4$X1,origin="1970-01-01")
@@ -106,9 +108,9 @@ p <- p %>% add_markers(data=b_t,x=~published,y=~cumulative_number,
                        mode="markers",type="scatter",name="Non-NCCE briefs")
 #p <- p %>% add_lines(data=points1,x=~X1,y=~X2,mode="line",name="trend line",
 #                     line=list(dash='dot'))
-p <- p %>% add_lines(data=points2,x=~X1,y=~X2,mode="line",name="trend line",
+p <- p %>% add_lines(data=points2,x=~X1,y=~X2,mode="line",name="trend line 1",
                      line=list(dash='dot'))
-p <- p %>% add_lines(data=points3,x=~X1,y=~X2,mode="line",name="trend line",
+p <- p %>% add_lines(data=points3,x=~X1,y=~X2,mode="line",name="trend line 2",
                      line=list(dash='dot'))
 p <- p %>% add_lines(data=points4,x=~X1,y=~X2,mode="line",name="last 30 days",
                      line=list(dash='dot'))
@@ -119,15 +121,16 @@ p %>%    layout(title = 'Number of Briefs and Contracts by Published Date',
                                  showgrid = TRUE))
 
 ```
+<br />  
   
 #### Contracts published per day:  
 
 Briefs/Contracts published per day | |
 --|--|--      
 Contracts before 23/May/17 | <strong>`r round(lm1$coefficients[2],2)`</strong>    
-Contracts after 23/May/17 | <strong>`r round(lm2$coefficients[2],2)`</strong>  
-NCCE briefs after 23/May/17 | <strong>`r round(lm3$coefficients[2],2)`</strong>  
-NCCE briefs last 30 days | <strong>`r round(lm4$coefficients[2],2)`</strong>  
+Contracts after 23/May/17 (trend line 1) | <strong>`r round(lm2$coefficients[2],2)`</strong>  
+NCCE briefs after 12/Apr/17 (trend line 2) | <strong>`r round(lm3$coefficients[2],2)`</strong>  
+NCCE briefs (last 30 days) | <strong>`r round(lm4$coefficients[2],2)`</strong>  
   
 ### Contracts published in the last week  
 ```{r echo=FALSE}
@@ -153,10 +156,25 @@ DMP (SON3413842) | `r dim(sonDMP)[1]` | $`r round(sum(sonDMP$Value)/1000000,2)`M
 ```{r echo=FALSE}
 lm_con <- lm(cumulative_value~Publish.Date,
              data=sonAll[sonAll$Publish.Date>(Sys.Date()-90),])
-line <- abline(lm_con$coefficients,as.Date("2017-03-01"),as.Date("2017-12-31"))
+line <- abline(lm_con$coefficients,Sys.Date()-90,Sys.Date()+15)
 line$X1 <- as.Date(line$X1,origin="1970-01-01")
 p <- plot_ly()
 points <- subset(sonAll,SON.ID=="SON3413842")
+# polynomial trend line
+end_date   <- floor_date(Sys.Date(),"month")
+start_date <- as.Date("2017-05-30")
+months     <- interval(start_date,end_date) %/% months(1)
+x_a        <- sonAll %>% filter(Publish.Date <= start_date)
+x_a        <- sum(x_a$Value)
+x_b        <- sonAll %>% filter(Publish.Date <= end_date)
+x_b        <- sum(x_b$Value)
+perc       <- 10^(log10(x_b/x_a)/months) - 1
+perc       <- ceiling(perc*100)/100 # round to the nearest percentile
+months     <- data.frame(months = seq(start_date,ceiling_date(Sys.Date(),"month"),by="months"))
+months$count <- 0:(nrow(months)-1)
+months$estimate <- x_a * (1+perc) ^ months$count
+caption    <- paste0("growth at ",round(perc*100),"%")
+
 p <- p %>% add_trace(data=points,x=~Publish.Date,y=~cumulative_value,
                      type="scatter",mode="markers",name="Marketplace Panel",
                      marker=list(size=5))
@@ -164,9 +182,11 @@ points <- subset(sonAll,SON.ID=="SON3364729")
 p <- p %>% add_trace(data=points,x=~Publish.Date,y=~cumulative_value,
                      type="scatter",mode="markers",name="DSPP",
                      marker=list(size=5))
-
 p <- p %>% add_lines(data=line,x=~X1,y=~X2,
-                     name="trend line",
+                     name="past 90 days",
+                    line=list(dash='dot'))
+p <- p %>% add_lines(data=months,x=~months,y=~estimate,
+                     name=caption,
                     line=list(dash='dot'))
 p <- p %>% layout(title = 'Contracts published by Standing Offer',
                     xaxis = list(title = "Published Date",
@@ -175,7 +195,9 @@ p <- p %>% layout(title = 'Contracts published by Standing Offer',
                                  showgrid = TRUE))
 p
 ```
-
+  
+* Trend line shows contracts published in the past 90 days (since `r date_to_string(Sys.Date()-90)`)  
+Rate = `r format_mil(lm_con$coefficients[2],order="K")` per day
 
 <br>  
 ```{r, echo=FALSE}

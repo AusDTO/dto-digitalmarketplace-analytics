@@ -1,0 +1,235 @@
+---
+title: "Specialist Pricing"
+output:
+  html_document:
+    theme: cerulean
+  pdf_document: default
+  word_document: default
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# if rendered in a new R session, load the session values
+if (!exists("buyers")) {
+  source("R\\utilities.r")
+  source("R\\plotly_functions.r")
+  source("R\\assorted_functions.r")
+  library(knitr)
+  library(tidyr)
+  library(RColorBrewer)
+  library(dplyr)
+  library(plotly)
+  library(stringr)
+  ## load the files - ensure these files are already produced
+  load(paste0(getwd(),rel_path_data,substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
+}
+
+#reference data
+thresholds = tibble(
+  aoe = c( 
+    "Agile delivery and Governance"    ,        "Software engineering and Development",    
+    "User research and Design"          ,       "Change and Transformation"            ,   
+    "Cyber security"                     ,      "Strategy and Policy"                   ,  
+    "Marketing, Communications and Engagement", "Data science"                           , 
+    "Emerging technologies" ,                   "Content and Publishing"                  ,
+    "Support and Operations" ,                  "Training, Learning and Development"      ),
+  maxprice = c(
+    1767, 1760,
+    1906, 2420,
+    2200, 2491,
+    2068, 1894,
+    1925, 1472,
+    1384, 2420
+  )
+)
+```
+# Pricing progress
+```{r echo=FALSE}
+
+# Note there are many 'prices' without matching domain, or entered by recruiters - so this is not entirely accurate
+sellers$has_pricing <- apply(select(sellers,starts_with("maxPrice")),1,function(x) sum(x,na.rm=TRUE)) > 0
+# remove the recruiters who are not also consultants
+s <- sellers %>% filter(!is_recruiter|(is_recruiter&no_of_case_studies>0))
+no_recruiters <- nrow(sellers) - nrow(s)
+no_legacy     <- sellers %>% filter(nchar(legacy_aoe)>1,!dmp_framework) %>% nrow
+product_only  <- sum(sellers$product_only)
+total_sellers <- nrow(sellers) - no_recruiters - no_legacy - product_only
+# need to filter out pricing that doesn't match a nominated category
+# List of all anticipated pricings, with any prices provided to date
+s2 <- s %>% 
+  mutate(aoe_all = paste(assessed_aoe,unassessed_aoe,sep="|")) %>%
+  select(aoe_all,code,name,starts_with("maxPrice")) %>%
+  gather(starts_with("maxPrice"),key="aoe",value="price") %>%
+  arrange(code)
+
+s2$aoe <- gsub("maxPrice\\.","",s2$aoe)
+s2$aoe <-  gsub("_"," ",s2$aoe)
+matches <- nzchar(str_match(s2$aoe_all,s2$aoe),keepNA = TRUE)
+matches[is.na(matches)] <- FALSE
+s2$match <- matches
+# also filter out the change, training and transformation prices - we don't care about them any more
+s2 <- s2 %>% filter(s2$match,!grepl("Training and Transformation",aoe))
+# List of sellers and their current pricing status
+s3 <- s2 %>%
+  select(code,name,aoe,price) %>%
+  arrange(code) %>%
+  group_by(code,name) %>%
+  summarise(complete_pricing = !is.na(sum(price)),
+            partial_pricing  = sum(price,na.rm=TRUE)>0)
+
+s_partials <- s3 %>% filter(!complete_pricing,partial_pricing)
+# s4 detailed list of all pricing values provided to date - filtered to remove any spurious prices
+s4 <- s2 %>% filter(!is.na(price)) %>%
+  left_join(thresholds, by="aoe") %>%
+  select(-match,-aoe_all) %>%
+  mutate(over_max = (price > maxprice))
+
+x <- s2 %>% filter(code %in% s_partials$code)
+
+## look at the edit requests - some edits are for sellers that already have pricing, so discount them
+apps$has_pricing    <- apply(select(apps,starts_with("maxPrice")),1,function(x) sum(x,na.rm=TRUE)) > 0
+s_with_pricing <- sellers %>% filter(has_pricing) %>% select(code)
+a_submitted <- apps %>% 
+  filter(type=="edit",status=="submitted",has_pricing) %>%
+  filter(!code %in% s_with_pricing$code)
+a_saved <- apps %>% 
+  filter(type=="edit",status=="reverted",has_pricing) %>%
+  filter(!code %in% s_with_pricing$code)
+
+no_remaining <- total_sellers - sum(s3$partial_pricing) - nrow(a_submitted) - nrow(a_saved)
+```
+### Seller breakdown    
+  
+.|Count|%  
+--|--|--   
+Number of sellers in catalogue | `r nrow(sellers)` | 100%  
+Number of recruiters (pricing not required) | `r no_recruiters` | `r round(no_recruiters/nrow(sellers)*100)`%  
+DSPP sellers (inactive) | `r no_legacy` | `r round(no_legacy/nrow(sellers)*100)`%  
+Product only sellers| `r sum(sellers$product_only)` | `r round(sum(sellers$product_only)/nrow(sellers)*100)`%  
+Sellers requiring prices | `r total_sellers` | `r round(total_sellers/nrow(sellers)*100)`%  
+
+### Current progress    
+.|Count|%  
+--|--|--   
+Sellers who require pricing | `r total_sellers` | 100%  
+Sellers with some pricing | `r sum(s3$partial_pricing)` | `r round(sum(s3$partial_pricing)/total_sellers*100)`%
+Sellers with full pricing | (`r sum(s3$complete_pricing)`) | (`r round(sum(s3$complete_pricing)/total_sellers*100)`%)  
+Sellers with edit requests submitted | `r nrow(a_submitted)` | `r round(nrow(a_submitted)/total_sellers*100)`%   
+Sellers with edit requests saved | `r nrow(a_saved)` | `r round(nrow(a_saved)/total_sellers*100)`%   
+Remaining | `r no_remaining` | `r round(no_remaining/total_sellers*100)`%  
+~edit requests are counted only if they contain pricing while the seller profile does not.  
+  
+```{r, echo=FALSE}
+s_with_over_max <- s4 %>% 
+  group_by(code,name,over_max) %>% 
+  summarise(count = n()) %>% 
+  filter(over_max)
+s_with_under_max <- s4 %>%
+  group_by(code,name,over_max) %>% 
+  summarise(count = n()) %>% 
+  filter(!over_max)
+s_with_both <- sum(s_with_over_max$code %in% s_with_under_max$code)
+```
+### By domain  
+
+.|Count|%  
+--|--|--   
+Total prices anticipated | `r nrow(s2)` | 100%
+Total prices provided | `r nrow(s4)` | `r round(nrow(s4)/nrow(s2)*100)`%  
+Prices provided over maxprice | `r sum(s4$over_max)` | `r round(sum(s4$over_max)/nrow(s4)*100)`%  
+  
+### For sellers with pricing  
+
+.|Count|%  
+--|--|--   
+Sellers with any prices over max | `r nrow(s_with_over_max)` | `r round(nrow(s_with_over_max)/total_sellers*100)`%  
+Sellers with any prices under max | `r nrow(s_with_under_max)` | `r round(nrow(s_with_under_max)/total_sellers*100)`%  
+Sellers with some (not all) prices over max | `r s_with_both` | `r round(s_with_both/total_sellers*100)`%  
+Total | `r nrow(s_with_over_max)` + `r nrow(s_with_under_max)` - `r s_with_both` = `r nrow(s_with_over_max) + nrow(s_with_under_max) - s_with_both` |    
+
+
+
+## Price ranges  
+
+### All prices received  
+```{r, echo=FALSE}  
+x <- s4$price
+hist(x,breaks=80,main="Histogram of all prices provided",ylab="count",xlab="$ (incl GST)")  
+```  
+
+### By area of expertise  
+  
+```{r, echo=FALSE}  
+for (aoe_ in unique(s4$aoe)) {
+  x <- s4 %>% filter(aoe == aoe_)
+  x <- x$price
+  hist(x,breaks=40,main=paste(aoe_,"prices"),ylab="count",xlab="$ (incl GST)")
+  maxp <- thresholds[which(aoe_ == thresholds$aoe),]$maxprice
+  cat(paste0("Threshold = $",maxp,"  \n"))
+}
+```  
+  
+  
+---  
+
+
+
+# Reference information for the pricing thresholds
+
+Pricing information based on all responses to seller briefs from 01-04-2017 to 31-03-2018 (inclusive).
+
+```{r, echo=FALSE}
+start_date <- as.Date("2017-04-01")
+end_date   <- as.Date("2018-03-31")
+# dataset to use
+br <- briefResponses %>%
+    filter(type == "Specialist") %>% # only responses to all specialist roles
+    filter(applicationDate >= start_date, applicationDate <= end_date) %>% # within date range
+    filter(dayRate < 4000) # exclude extreme values
+```
+
+There were `r dim(br)[1]` specialist responses received in that time.  
+
+### Count of bids received for each area of expertise  
+```{r, echo=FALSE}
+b <- br %>%  
+    group_by(areaOfExpertise) %>%
+    summarise(responses = n(),
+              `90 percentile` = quantile(dayRate,0.9),
+              `95 percentile` = quantile(dayRate,0.95),
+              `10 percentile` = quantile(dayRate,0.1),
+              `5 percentile` = quantile(dayRate,0.05))
+b <- b %>% add_row(areaOfExpertise = "ALL",
+              responses       = sum(.$responses),
+              `90 percentile` = quantile(br$dayRate,0.9),
+              `95 percentile` = quantile(br$dayRate,0.95),
+              `10 percentile` = quantile(br$dayRate,0.1),
+              `5 percentile` = quantile(br$dayRate,0.05))
+b[which(b$areaOfExpertise=="Emerging technologies"),3:6] <- 
+    b[which(b$areaOfExpertise=="ALL"),3:6]
+kable(b)
+```   
+  
+### Day rates bid for specialist briefs by service
+```{r, echo=FALSE}
+#plot_ly(x=~dayRate, color=~areaOfExpertise,data=br,type="box",
+#        width=1000,height=500,colors=brewer.pal(11,"Paired")) %>% 
+#  layout(showlegend=F,autosize=F,margin=list(l=200))
+
+
+
+plot_ly(data = br,x=~dayRate,y=~areaOfExpertise,
+        type="scatter",
+        #color=~overThreshold,
+        #colors=c("blue","red"),
+        mode="markers",
+        marker = list(size=2)) %>%
+  layout(showlegend=F,autosize=F,
+         margin=list(l=200),
+         title="Day Rates Bid")
+
+```  
+
+
+

@@ -24,7 +24,6 @@ if (!exists("buyers")) {
   library(dplyr)
   library(plotly)
   ## load the files - ensure these files are already produced
-  #load(paste0(getwd(),"/../data/",substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
   load(paste0(getwd(),"\\..",rel_path_data,substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
 }
 
@@ -32,9 +31,6 @@ if (!exists("buyers")) {
 buyers <- buyers[buyers$active==TRUE,]
 buyers <- buyers[!grepl("\\+",buyers$email_address),]
 # need a better function to determine close date
-#briefs$close <- briefs$published + 7.5
-#briefs[briefs$duration=="2 weeks","close"] <- 
-#  briefs[briefs$duration=="2 weeks","close"] + 7
 
 ```
 **run date: `r date_to_string(Sys.Date())`**  
@@ -103,12 +99,23 @@ x <- sapply(dsl,count_open_briefs,b=briefs)
 y <- briefs %>% group_by(published) %>% summarise(count=n())
 
 plot_ly(x=dsl,y=~x,mode="lines",type="scatter",name="briefs open") %>% 
-  add_trace(data=y,x=~published,y=~count,type="bar",name="briefs published") %>%
+  add_trace(data=y,x=~published,y=~count,type="bar",name="briefs published",inherit=FALSE) %>%
   layout(title="Brief publishing",
          xaxis=list(title=""),
          yaxis=list(title="Count"))
 ```
   
+### Agencies publishing by month  
+```{r,echo=FALSE}
+b <- briefs %>% 
+  mutate(month = floor_date(published,unit="month")) %>% 
+  group_by(month) %>%
+  summarise(count=length(unique(agencyName))) %>%
+  filter(month < floor_date(Sys.Date(),unit="month")) # exclude the current month
+plot_ly(data=b,x=~month,y=~count,type="scatter",mode="lines+markers") %>%
+  layout(title="Number of agencies publishing per month",
+         yaxis=list(range=c(0,40)))
+```
   
 ### Published briefs
 ```{r echo=FALSE}
@@ -124,7 +131,7 @@ b_counts <- rbind(b_counts,c("Total",sum(b_counts$count),100))
 `r kable(b_counts)`  
   
 #### Number of Briefs Published Since Launch  
-`r plot_briefs_published(briefs)`  
+`r plot_briefs_published_by_type(briefs)`  
   
 ### Responses for Specialist Briefs  
 ```{r, echo=FALSE}
@@ -162,7 +169,7 @@ p <- plot_ly(x=all_dens$x,y=up,
              name="All areas",
              color=brewer.pal(10,"Paired")[1])
 p <- p %>% add_lines(x=all_dens$x,y=down,mode="line",
-                     color=brewer.pal(10,"Paired")[1],
+                     color=brewer.pal(12,"Paired")[1],
                      fill = "tonexty",
                      showlegend=FALSE)
 areas <- as.character(resps[resps$`Number of Responses`>10,]$`Area of Expertise`)
@@ -171,7 +178,7 @@ for (i in 1:length(areas)) {
     p <- add_density_plot(p,
                           vals[vals$areaOfExpertise==areas[i],],
                           i,
-                          brewer.pal(10,"Paired")[i+1])
+                          brewer.pal(12,"Paired")[i+1])
 #  }
 }
 p <- p %>% layout(xaxis=list(range=c(0,3000),
@@ -211,20 +218,42 @@ p <- p %>% add_annotations(
 <br>  
 
 ```{r,echo=FALSE}
-x <- briefResponses %>% filter(openTo=="All") %>% group_by(id) %>% summarise(responses = length(id))
-dens <- density(x$responses,from=0)
-dens$y <- dens$y / (max(dens$y)) * 33
-plot_ly(x=x$responses,type="histogram",name="histogram") %>% 
-  add_lines(x=dens$x,y=dens$y,name="smoothed") %>%
-  layout(title="Seller Applications per Brief",xaxis=list(title="Applications"),
-         yaxis=list(title="Count"))
+specialists <- briefResponses %>% 
+  filter(openTo=="All", type=="Specialist") %>% 
+  filter(published > Sys.Date() - 365) %>%
+  group_by(id) %>% 
+  summarise(responses = sum(attachments)) %>%
+  filter(!is.na(responses))
+outcomes <- briefResponses %>% 
+  filter(openTo=="All", type=="Outcome") %>% 
+  filter(published > Sys.Date() - 365) %>%
+  group_by(id) %>% 
+  summarise(responses = n()) %>%
+  filter(!is.na(responses))
+dens_s <- density(specialists$responses,from=0)
+dens_s$y <- dens_s$y / (max(dens_s$y)) * 45
+dens_o <- density(outcomes$responses,from=0)
+dens_o$y <- dens_o$y / (max(dens_o$y)) * 45
+plot_ly(alpha = 0.6) %>%
+  add_histogram(x=specialists$responses,type="specialists",name="histogram") %>%
+  add_histogram(x=outcomes$responses,type="outcomes",name="histogram") %>%
+  add_lines(x=dens_s$x,y=dens_s$y,name="Specialists") %>%
+  add_lines(x=dens_o$x,y=dens_o$y,name="Outcomes") %>%
+  layout(
+    barmode="overlay",
+    title="Seller Responses per Brief",
+    xaxis=list(title="Applications"),
+    yaxis=list(title="Count"))
+  
+
 ```
 <br>  
 Summary figures:  
 
-Min. | 1st Quartile | Median | Mean | 3rd Quartile | Max.  
---|--|--|--|--|--  
-`r paste(paste(summary(x$responses),collapse = " | "),"  ")`  
+Type | Min. | 1st Quartile | Median | Mean | 3rd Quartile | Max.  
+--|--|--|--|--|--|--  
+Specialists | `r paste(paste(summary(specialists$responses),collapse = " | "),"  ")`  
+Outcomes | `r paste(paste(summary(outcomes$responses),collapse = " | "),"  ")`  
 
       
 ### Publishing Agencies  

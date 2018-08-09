@@ -27,7 +27,7 @@ process_buyers <- function(u,update = FALSE) {
     stop()
   }
   # filter the inactive buyers
-  b <- b[b$active,]
+  # b <- b[b$active,]
   attr(b,"timestamp") <- Sys.time()
   if (update) {
     write_new_sheet("RegisteredBuyers",b)  
@@ -40,7 +40,6 @@ process_sellers <- function(sellers) {
   return(sellers)
 }
 
-#current version
 process_briefs <- function(b,buy,update_gs=TRUE) {
   
   # fetch the buyer details for an individual brief
@@ -138,7 +137,7 @@ write_new_sheet <- function(sheet_name,contents,latest_only=FALSE,is_verbose=FAL
 # version 1 - for use just post upgrade to M2.0
 # returns a list of seller contacts for EDMs
 # if dmp_framework == TRUE, returns seller contacts on dmp_framework, else, all other seller contacts
-process_seller_email_list <- function(sellers,contributors,dmp_framework) {
+process_seller_email_list_XXX <- function(sellers,contributors,dmp_framework) {
   sell <- sellers[
               sellers$dmp_framework==dmp_framework&!sellers$product_only,
               c("code","name","contact_email")
@@ -158,17 +157,19 @@ process_seller_email_list <- function(sellers,contributors,dmp_framework) {
 # use sellers, users, applications
 # list includes all users for DMP framework sellers, except if product only
 # Also includes legacy sellers whose profiles are in submitted or reverted status
+# 6/2/18 - stop including DSPP sellers who are still upgrading
 process_seller_email_list <- function(s,u,a) {
   # only active users
   u <- u[u$active,]
   # identify the legacy sellers still in submitted or reverted state
-  codes <- a[!is.na(a$supplier_code)&a$status %in% c("reverted","submitted")&a$type=="upgrade",]$supplier_code
-  upgrading <- s[s$code %in% codes,c("code","name","contact_email")]
+  #codes <- a[!is.na(a$supplier_code)&a$status %in% c("reverted","submitted")&a$type=="upgrade",]$supplier_code
+  #upgrading <- s[s$code %in% codes,c("code","name","contact_email")]
   active    <- s[
-    s$dmp_framework==TRUE&!s$product_only,
-    c("code","name","contact_email")
-    ]
-  all  <- rbind(upgrading,active)
+                  s$dmp_framework==TRUE&!s$product_only,
+                  c("code","name","contact_email")
+                ]
+  #all  <- rbind(upgrading,active)
+  all <- active
   sell <- merge(all,u[!is.na(u$seller_id),],by.x="code",by.y="seller_id",all.x=TRUE)
   return(
     unique(
@@ -219,4 +220,80 @@ process_contracts <- function(contracts,sellers) {
   contracts <- left_join(c,s,by=c("Supplier.ABN" = "abn"))
   attr(contracts,"timestamp") <- Sys.time()
   return(contracts)
+}
+
+# generates a list of contact emails for a given set of sellers
+# use a filtered list of sellers, but the full set of users
+process_seller_contact_list <- function(sellers,users) {
+  l <- users %>%
+    filter(!is.na(seller_id),active) %>% #active users with a seller ID
+    select(seller_id,email_address) %>%
+    right_join(sellers,by=c("seller_id"="code"))
+  unique(c(str_to_lower(l$email_address),
+           str_to_lower(l$contact_email),
+           str_to_lower(l$auth_rep_email)))
+}  
+
+# produce a summary file of agencies and their activity
+process_agency_summary <- function(buyers,briefs,contracts) {
+  # optionally map the values in v to the mapped value in mappings
+  # mappings has columns 
+  map_values <- function(v,mappings) {
+    for(i in 1:nrow(mappings)) {
+      v[which(v == mappings[i,]$from)] <- mappings[i,]$to
+    }
+    v
+  }
+  
+  ref_d         <- gs_title("ref-domains")
+  ref_domain    <- ref_d  %>% gs_read(ws = "agencies")
+  exceptions    <- ref_d  %>% gs_read(ws = "exceptions")
+  name_map      <- ref_domain %>%
+    filter(!is.na(austender_name)) %>%
+    select(agencyName,austender_name)
+  names(name_map) <- c("from","to")
+  ref_domain[is.na(ref_domain)] <- ""
+  
+  b <- buyers
+  b$email_domain <- map_values(b$email_domain,exceptions)
+  b$agencyName   <- map_values(b$agencyName,exceptions)
+  b$sector       <- map_values(b$sector,exceptions)
+  agencies <- b %>%
+    group_by(agencyName,sector,entities,email_domain,state) %>%
+    summarise(no_registered_buyers = n(),
+              first_joined = min(created_at))
+  
+  br <- briefs
+  br$email_domain  <- map_values(br$email_domain,exceptions) 
+  b_summ <- br %>%
+    group_by(email_domain) %>%
+    summarise(briefs_published = n(),
+              first_published  = min(published),
+              last_published   = max(published))
+  agencies <- agencies %>%
+    left_join(b_summ, by="email_domain")
+  agencies$briefs_published[is.na(agencies$briefs_published)] <- 0
+  agencies$state[is.na(agencies$state)] <- ""
+  agencies$agencyName <- map_values(agencies$agencyName,name_map)
+  
+  c        <-  contracts
+  c$Agency <-  map_values(c$Agency,exceptions)
+  agency_contracts <- c %>% 
+    group_by(Agency) %>%
+    summarise(no_of_contracts = n(),
+              total_value     = sum(Value),
+              max_value       = max(Value),
+              median_value    = median(Value),
+              mean_value      = mean(Value),
+              min_value       = min(Value),
+              earliest_contract = min(Publish.Date),
+              latest_contract   = max(Publish.Date)) %>%
+    arrange(desc(no_of_contracts))
+  
+  agency_summary <- full_join(agencies,agency_contracts,by=c("agencyName"="Agency"))
+  x <- agency_summary[,11:16]
+  x[is.na(x)] <- 0
+  agency_summary[,11:16] <- x
+  attr(agency_summary,"timestamp") <- Sys.Date()
+  return(agency_summary)
 }
