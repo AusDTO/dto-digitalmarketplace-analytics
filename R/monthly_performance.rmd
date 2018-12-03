@@ -1,0 +1,196 @@
+---
+title: "Marketplace Monthly Performance"
+output:
+  html_document:
+    theme: journal
+    toc: true
+    toc_float: true
+    df_print: paged
+  pdf_document: default
+  word_document: default
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+if (!exists("buyers")) {
+  source("../R/utilities.r")
+  source("../R/plotly_functions.r")
+  source("../R/assorted_functions.r")
+  library(knitr)
+  library(tidyr)
+  library(RColorBrewer)
+  library(dplyr)
+  library(plotly)
+  library(httr)
+  library(stringr)
+  library(kableExtra)
+  library(lubridate)
+  ## load the files - ensure these files are already produced
+  load(paste0(getwd(),rel_path_data(),substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
+}
+
+month <- "month" # change to "week" to get a weekly report  
+
+current_month   <- floor_date(Sys.Date(),unit=month) # filter out events after this date as month
+reporting_month <- floor_date(current_month-1,unit=month) # month in focus
+previous_month  <- floor_date(reporting_month-1,unit=month)
+reporting_month_name  <- as.character(month(reporting_month,label=TRUE,abbr=FALSE))
+previous_month_name   <- as.character(month(previous_month,label=TRUE,abbr=FALSE))
+
+
+c_m    <- contracts %>% 
+  filter(Publish.Date < current_month) %>%
+  mutate(month = floor_date(Publish.Date,unit=month))
+b_m    <- briefs %>% 
+  mutate(publish_month = floor_date(published,unit=month),
+         close_month   = floor_date(close,unit=month)) %>%
+  filter(published < current_month)
+```   
+
+```{r,echo=FALSE}  
+b <- b_m %>%
+  group_by(publish_month) %>%
+  summarise(count = n(),
+            publishing_agencies = length(unique(email_domain)),
+            all = sum(openTo == "All")/n()*100,
+            some = sum(openTo == "Some")/n()*100,
+            one  = sum(openTo == "One")/n()*100,
+            specialist = sum(type == "Specialist")/n()*100,
+            outcome    = sum(type == "Outcome")/n()*100,
+            training   = sum(type == "Training")/n()*100,
+            comm_cce   = sum(entities == "CCE")/n()*100,
+            local      = sum(entities == "Local")/n()*100,
+            comm_ncce  = sum(entities == "NCCE")/n()*100,
+            other      = sum(entities == "Other")/n()*100,
+            state      = sum(entities == "State")/n()*100,
+            all_total  = sum(openTo == "All"),
+            some_total = sum(openTo == "Some"),
+            one_total  = sum(openTo == "One"),
+            specialist_total = sum(type == "Specialist"),
+            outcome_total    = sum(type == "Outcome"),
+            training_total   = sum(type == "Training"),
+            comm_cce_total   = sum(entities == "CCE"),
+            local_total      = sum(entities == "Local"),
+            comm_ncce_total  = sum(entities == "NCCE"),
+            other_total      = sum(entities == "Other"),
+            state_total      = sum(entities == "State")
+            )
+b_rep  <- b[which(b$publish_month==reporting_month),]
+b_prev <- b[which(b$publish_month==previous_month),]
+p <- plot_ly(data=b,x=~publish_month,y=~count,type="scatter",mode="lines+markers") %>%
+  layout(title = "Count of briefs published each month",
+         xaxis = list(title="month published"),
+         yaxis = list(title="briefs published",range=c(0,100)))
+```
+
+# Briefs   
+<br />
+**Summary for `r reporting_month_name`**    
+
+*  `r b_rep$count[1]` briefs were published (`r b_prev$count[1]` published in `r previous_month_name`)    
+*  `r b_rep$publishing_agencies[1]` agencies published briefs (`r b_prev$publishing_agencies[1]` published in `r previous_month_name`)  
+
+
+## Number of briefs published  
+<br />  
+`r p`  
+  
+  
+## Split of briefs by who open to  
+<br />  
+```{r,echo=FALSE}  
+#by percentage
+p1 <- plot_ly(data=b,x=~publish_month,y=~all,name="all",type="scatter",mode="lines+markers") %>%
+  add_trace(y=~some,name="some") %>%
+  add_trace(y=~one,name="one") %>%
+    layout(title = "Percentage of briefs by sellers open to",
+         xaxis = list(title=""),
+         yaxis = list(title="percentage",range=c(0,100)),
+         legend=list(orientation="h"))
+# by value
+p2 <- plot_ly(data=b,x=~publish_month,y=~all_total,name="all",type="scatter",mode="lines+markers") %>%
+  add_trace(y=~some_total,name="some") %>%
+  add_trace(y=~one_total,name="one") %>%
+  add_trace(y=~count,name="total") %>%
+    layout(title = "Number of briefs by sellers open to",
+         xaxis = list(title=""),
+         yaxis = list(title="number of briefs"),
+         legend=list(orientation="h"))
+
+```
+  
+`r p1`  
+`r p2`  
+
+## Split of briefs by type  
+<br />  
+
+```{r,echo=FALSE}  
+p3 <- plot_ly(data=b,x=~publish_month,y=~outcome,name="outcomes",type="scatter",mode="lines+markers") %>%
+  add_trace(y=~specialist,name="specialists") %>%
+  add_trace(y=~training,name="training") %>%
+    layout(title = "Percentage of briefs by type",
+         xaxis = list(title=""),
+         yaxis = list(title="percentage",range=c(0,100)),
+         legend=list(orientation="h"))
+
+p4 <- plot_ly(data=b,x=~publish_month,y=~outcome_total,name="outcomes",type="scatter",mode="lines+markers") %>%
+  add_trace(y=~specialist_total,name="specialists") %>%
+  add_trace(y=~training_total,name="training") %>%
+  add_trace(y=~count,name="total") %>%
+    layout(title = "Number of briefs by type",
+         xaxis = list(title=""),
+         yaxis = list(title="number of briefs"),
+         legend=list(orientation="h"))
+
+```
+
+`r p3`  
+`r p4`   
+
+# Buyers  
+
+## Agencies publishing  
+<br />  
+```{r,echo=F}
+p5 <- plot_ly(data=b,x=~publish_month,y=~publishing_agencies,type="scatter",mode="lines+markers") %>%
+  layout(title = "Count of agencies publishing in each month",
+         xaxis = list(title=""),
+         yaxis = list(title="agencies publishing briefs"))  
+```   
+`r p5`  
+
+## Split of briefs by publishing entity type  
+<br />  
+
+```{r,echo=FALSE}  
+p6 <- plot_ly(data=b,x=~publish_month,y=~comm_ncce,name="Comm NCCE",type="scatter",mode="lines+markers") %>%
+  add_trace(y=~comm_cce,name="Comm CCE") %>%
+  add_trace(y=~state,name="State") %>%
+  add_trace(y=~local,name="Local") %>%
+  add_trace(y=~other,name="Other") %>%
+    layout(title = "Percentage of briefs by publishing entity type",
+         xaxis = list(title=""),
+         yaxis = list(title="percentage",range=c(0,100)),
+         legend=list(orientation="h"))
+
+p7 <- plot_ly(data=b,x=~publish_month,y=~comm_ncce_total,name="Comm NCCE",type="scatter",mode="lines+markers") %>%
+  add_trace(y=~comm_cce_total,name="Comm CCE") %>%
+  add_trace(y=~state_total,name="State") %>%
+  add_trace(y=~local_total,name="Local") %>%
+  add_trace(y=~other_total,name="Other") %>%
+  add_trace(y=~count,name="Total") %>%
+    layout(title = "Number of briefs by publishing entity type",
+         xaxis = list(title=""),
+         yaxis = list(title="number of briefs",range=c(0,100)),
+         legend=list(orientation="h"))
+
+```  
+`r p6`  
+`r p7`  
+
+## Top buyers publishing  
+## Top buyers by contracts published  
+## New agencies this month  
+
