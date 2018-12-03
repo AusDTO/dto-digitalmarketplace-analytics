@@ -2,8 +2,9 @@
 title: "Marketplace Transactions"
 output:
   html_document:
-    theme: cerulean
+    theme: journal
     toc: true
+    toc_float: true
   pdf_document: default
   word_document: default
 always_allow_html: yes
@@ -140,7 +141,25 @@ last_contracts <- contracts %>%
   arrange(desc(Publish.Date))
 ```  
   
-`r kable(last_contracts)`
+`r kables(last_contracts)`
+
+### Contracts varied in the past week  
+```{r echo=FALSE}
+#rel_path_data()
+old_contracts <- last_contracts_file()
+contract_variations <- ready(old_contracts) %>%
+  select(CN.ID,Value) %>%
+  left_join(contracts,by="CN.ID") %>%
+  mutate(Variation = Value.y - Value.x) %>%
+  filter(Variation != 0) %>%
+  select(Agency,name,Supplier.ABN,Publish.Date,Value.y,Variation)
+names(contract_variations) <- qw("Agency Seller_Name ABN First_Published New_Value Variation")
+#kables(contract_variations)
+```  
+Contracts that have been varied since `r str_match(old_contracts,"\\d{4}\\-\\d{2}\\-\\d{2}")[1,1]`  
+Total variation of `r format_mil(sum(contract_variations$Variation),digits=3)`  
+`r kables(contract_variations)`  
+  
   
 ### Contract Values      
 <br />    
@@ -269,13 +288,13 @@ plot_ly(data=sonAll,x=~Publish.Date,y=~LogValue,
 ```{r,echo=FALSE}
 breaks <- 20
 vals3364729 <- sonAll[sonAll$SON.ID=="SON3364729",]$LogValue
-max_val_3364729 <- 10  #max(hist(vals3364729,breaks=breaks)$counts)
+max_val_3364729 <- max(hist(vals3364729,breaks=breaks,plot=F)$counts)
 dens3364729 <- density(vals3364729)
-dens3364729$y <- dens3364729$y / max(dens3364729$y) * max_val_3364729 * 1.7
+dens3364729$y <- dens3364729$y / max(dens3364729$y) * max_val_3364729
 vals3413842 <- sonAll[sonAll$SON.ID=="SON3413842",]$LogValue
-max_val_3413842 <- 15 #max(hist(vals3413842,breaks=breaks)$counts)
+max_val_3413842 <- max(hist(vals3413842,breaks=breaks,plot=F)$counts)
 dens3413842 <- density(vals3413842)
-dens3413842$y <- dens3413842$y / max(dens3413842$y) * max_val_3413842 * 1.6
+dens3413842$y <- dens3413842$y / max(dens3413842$y) * max_val_3413842
 ```
 ```{r, echo=FALSE}
 p <- plot_ly(alpha = 0.6) %>%
@@ -370,7 +389,7 @@ plot_ly(data=merged,x=~index,y=~count,type="scatter",
   
   
 #### Top ten sellers by number of contracts    
-`r kable(cbs[1:10,])`  
+`r kables(cbs[1:10,])`  
   
 #### Contracts versus Brief Applications  
 ```{r, echo=FALSE}
@@ -392,10 +411,10 @@ Sellers awarded contracts | `r x31` |  `r x32`
 Number of active sellers | `r x41` | `r x42`   
 
 ### By SME Badge
-`r kable(sme_badge)`  
+`r kables(sme_badge)`  
   
 ### By Declared Number of Employees  
-`r kable(sme_emps)`
+`r kables(sme_emps)`
 
 
 

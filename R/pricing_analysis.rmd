@@ -231,5 +231,22 @@ plot_ly(data = br,x=~dayRate,y=~areaOfExpertise,
 
 ```  
 
+## Seller activity versus pricing  
+Check how active sellers are, versus whether they've provided pricing yet  
 
+```{r, echo=FALSE}
+br <- briefResponses %>%
+  select(supplierId,supplierName,id,published,applicationDate) %>%
+  left_join(s3,by=c("supplierId"="code")) %>%
+  mutate(week = floor_date(applicationDate,unit="weeks"))
+# recruiters are not in the s3 dataframe, but don't need pricing
+br[is.na(br$partial_pricing),]$partial_pricing <- TRUE
+br <- br %>%
+  group_by(week,partial_pricing) %>%
+  summarise(count=n())
+x <- summary(br[!br$partial_pricing,]$count)
+br$partial_pricing <- as.factor(br$partial_pricing)
+plot_ly(data=br,x=~week,y=~count,color=~partial_pricing,type="scatter",mode="markers+lines") %>% 
+  layout(title="Brief responses per week for sellers with/without pricing")
 
+```

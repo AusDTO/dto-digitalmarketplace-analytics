@@ -65,11 +65,12 @@ extract_sellers <- function(header,include_deleted = FALSE) {
                       "assessed_aoe","unassessed_aoe","legacy_aoe",
                       "product_only","dmp_framework","no_of_case_studies","number_of_employees",
                       "sme_by_employees","sme_badge",
-                      "is_recruiter","regional","start_up","female_owned","indigenous",
+                      "is_recruiter","recruiter","regional","start_up","female_owned","indigenous",
                       "address_line","suburb","state","country","postal_code",
                       "gov_exp_federal","gov_exp_international","gov_exp_local","gov_exp_state",
                       "gov_exp_no_experience","creation_time","liability_exp","work_comp_exp",
-                      paste0("maxPrice.",gsub(" ","_",domains)))
+                      paste0("maxPrice.",gsub(" ","_",domains)),
+                      "signed_agreement_date")
   
   process_raw_sellers <- function(df) {
     df <- df[!is.na(df$status),]        # filter out the ORAMS sellers
@@ -127,6 +128,9 @@ extract_sellers <- function(header,include_deleted = FALSE) {
         df <- cbind(df,p)
       }
     }
+    df$signed_agreement_date <- sapply(df$signed_agreements,function(x) {
+      date_to_string(max(parse_utc_timestamp_date(x$signed_at)))
+    })
     df <- df[,names(df) %in% seller_columns]
     # might want to write some other lines to extract the addresses, contacts etc
     df
@@ -189,6 +193,7 @@ extract_briefs  <- function(header, return_all = FALSE) {
     briefs$areaOfExpertise <- gsub("\\,"," ",briefs$areaOfExpertise)
     briefs$areaOfExpertise <- as.factor(briefs$areaOfExpertise)
     briefs$published <- parse_utc_timestamp_date(briefs$publishedAt)
+    briefs$updatedAt <- parse_utc_timestamp_date(briefs$updatedAt)
     # there are a few NAs early on
     briefs[is.na(briefs$close),"close"] <- briefs[is.na(briefs$close),"published"] + 14
     return(briefs[,briefPresentationFilter])

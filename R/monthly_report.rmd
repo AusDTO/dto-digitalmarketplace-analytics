@@ -4,6 +4,7 @@ output:
   html_document:
     theme: cerulean
     toc: true
+    toc_float: true
   pdf_document: default
   word_document: default
 always_allow_html: yes
@@ -11,8 +12,18 @@ always_allow_html: yes
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-start <- as.Date("2018-07-01")
-end   <- as.Date("2018-07-31")
+
+## set manual_date = TRUE to specify the dates manually. Otherwise the
+# dates will default to the last full month based on the Sys.Date
+manual_date = FALSE
+if (manual_date) {
+  start <- as.Date("2018-09-01")
+  end   <- as.Date("2018-09-31")
+} else {
+  end   <- floor_date(Sys.Date(),unit="month") - 1
+  start <- floor_date(end,unit="month")
+}
+
 fy_start <- as.Date("2018-07-01")
 ninety_days <- seq(end-89,end,by="day")
 #reference_file <- "..\\data\\2017-09-19.Rdata"
@@ -69,7 +80,7 @@ agencies <- rbind(agencies,
 
 ```  
 
-`r kable(agencies)`   
+`r kables(agencies)`   
   
   
   
@@ -83,7 +94,7 @@ buyer_counts <- briefs %>%
   arrange(desc(count))
 ```
 
-`r kable(buyer_counts)`     
+`r kables(buyer_counts)`     
 
 **Total buyers publishing in month `r dim(buyer_counts)[1]`**  
 
@@ -138,7 +149,7 @@ sme_emps$by_count <- sme_emps$count / sum(sme_emps$count) * 100
 `r round(sme_emps[sme_emps$sme_by_employees==T,"by_value"],digits=0)`% of the dollar value contracted through the Marketplace...  
 
 
-`r kable(sme_emps,digits=1)`  
+`r kables(sme_emps)`  
   
 ## Contract values tile  
 
@@ -271,7 +282,7 @@ by_phase <- rbind(by_phase,c("Total",sum(by_phase$count),100))
 NAs      <- sum(is.na(briefs$phase))
 ```  
   
-`r kable(by_phase,digits=2)`  
+`r kables(by_phase)`  
 Number of briefs with phase not set: `r NAs` - these are not counted above  
 
   
@@ -314,7 +325,7 @@ plot_ly(aoe_top5,
         marker=list(
           colors = brewer.pal(7,"Blues")))
 ```
-`r kable(aoe_counts)`  
+`r kables(aoe_counts)`  
 
 # How active is the Marketplace?  
 
@@ -334,7 +345,7 @@ aoes <- aoes + aoes_un
 aoe_df <- data.frame(count=aoes)
 ```
 
-`r kable(aoe_df)`  
+`r kables(aoe_df)`  
 ## Brief responses  
 ```{r,echo=FALSE}
 #b_filt <- briefs %>% 
@@ -416,20 +427,20 @@ plot_ly(fy_all,
         direction="clockwise"
         #marker = list(
         #  colors= colours)
-        )
+        ) %>% layout(showlegend=F)
 ```
   
 ### Current financial year  
 #### Top ten sellers
-`r kable(fy_contracts[1:10,])`  
+`r kables(fy_contracts[1:10,])`  
 #### Count of 'others' - excludes the top 10 sellers  
-`r kable(fy_others)`  
+`r kables(fy_others)`  
   
 ## Contracts to SMEs for this month tile   
 
-`r m_by_sme[m_by_sme$sme_by_employees==T,"perc_by_count"]`  Contracts have been awarded by volume to SME sellers this month  
+`r round(m_by_sme[m_by_sme$sme_by_employees==T,"perc_by_count"])`% of contracts have been awarded by volume to SME sellers this month  
 
-`r kable(m_by_sme,digits=1)`  
+`r kables(m_by_sme)`  
     
 ## Contracts this month tile  
   

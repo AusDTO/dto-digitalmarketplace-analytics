@@ -56,6 +56,6 @@ log_current_observations <- function(timestamp = Sys.time()) {
   # if initiating a new file 
   #write.table(log[1:which(log$class=="")[1]-1,],file=paste0(rel_path_data,log_filename),sep=",",append=FALSE,quote=TRUE,row.names=FALSE,col.names=TRUE)
   # append the log file
-  write.table(log[1:which(log$class=="")[1]-1,],file=paste0(getwd(),rel_path_data,log_filename),sep=",",append=TRUE,quote=TRUE,row.names=FALSE,col.names=FALSE)
+  write.table(log[1:which(log$class=="")[1]-1,],file=paste0(getwd(),rel_path_data(),log_filename),sep=",",append=TRUE,quote=TRUE,row.names=FALSE,col.names=FALSE)
   #return(log[1:which(log$class=="")[1]-1,]) 
 }

@@ -10,7 +10,7 @@ save_data <- function() {
                                   agency_summary")
                                ]
   save(list = objects_list,
-       file = paste0(getwd(),rel_path_data,substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
+       file = paste0(getwd(),rel_path_data(),substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
   save_individual <- function(obj_name) {
     get(obj_name,envir=.GlobalEnv) %>% writey(obj_name)
   }
@@ -23,7 +23,8 @@ save_data <- function() {
     select(Agency:Value,code,name,is_recruiter,indigenous,sme_by_employees) %>%
     writer("contracts")
   writer(agency_summary,"agency-summary")
-  
+  writer(generate_seller_list(sellers),"sellers")
+  writer(mkt_briefs,"marketplace_briefs")
 }
 
 

@@ -2,8 +2,9 @@
 title: "Snapshot"
 output:
   html_document:
-    theme: cerulean
+    theme: journal
     toc: true
+    toc_float: true
   pdf_document: default
   word_document: default
 always_allow_html: yes
@@ -23,6 +24,7 @@ if (!exists("buyers")) {
   library(RColorBrewer)
   library(dplyr)
   library(plotly)
+  library(httr)
   ## load the files - ensure these files are already produced
   load(paste0(getwd(),"\\..",rel_path_data,substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
 }
@@ -41,7 +43,7 @@ buyers <- buyers[!grepl("\\+",buyers$email_address),]
 ## Current briefs  
 
 ### Open to selecteds  
-`r kable(invited_sellers(briefs,briefResponses))`  
+`r kables(invited_sellers(briefs,briefResponses))`  
 
   
 ### Currently Live  
@@ -55,14 +57,14 @@ b_apps <- briefResponses[!is.na(briefResponses$applicationId),] %>%
   group_by(id) %>% 
   summarise(applications = length(id))
 bl <- merge(bl,b_apps,by.x="id",by.y="id",all.x=TRUE) %>% arrange(closes)
-bl[is.na(bl)] <- 0
+bl[is.na(bl$applications),]$applications <- 0
 #bl$closes     <- date_to_string(bl$closes)
 #bl <- bl[order(bl$closes),]
 ```
   
 Number of open briefs: `r dim(bl)[1]`  
 
-`r kable(bl,row.names=FALSE)`  
+`r kables(bl)`  
   
 ### Recently Closed  
 ```{r echo=FALSE}
@@ -76,9 +78,9 @@ brc <- brc[,c("id","title","organisation","openTo","type","published","brief_clo
 brc <- merge(brc,b_apps,by.x="id",by.y="id",all.x=TRUE)
 brc <- brc[order(brc$brief_closed,decreasing=TRUE),]
 #brc$brief_closed <- date_to_string(brc$brief_closed)
-brc[is.na(brc)] <- 0
+brc[is.na(brc$applications),]$applications <- 0
 ```
-`r kable(brc,row.names=FALSE)`  
+`r kables(brc)`  
   
 ---  
 
@@ -128,7 +130,7 @@ b_counts <- b %>%
 b_counts$percentage <- round(b_counts$count/sum(b_counts$count)*100)
 b_counts <- rbind(b_counts,c("Total",sum(b_counts$count),100))
 ```
-`r kable(b_counts)`  
+`r kables(b_counts)`  
   
 #### Number of Briefs Published Since Launch  
 `r plot_briefs_published_by_type(briefs)`  
@@ -203,7 +205,7 @@ p <- p %>% add_annotations(
   
   
 #### Number of Specialist Briefs and Responses Since Launch  
-`r kable(resps)`  
+`r kables(resps)`  
 <br>  
   
 #### Bids for Open to All Specialist Briefs  
@@ -279,7 +281,7 @@ counts$email_domain <- factor(counts$email_domain,levels=counts$email_domain)
 **Total publishing agencies `r dim(counts)[1]`**    
   
   
-`r kable(counts)`   
+`r kables(counts)`   
 
 ---  
   
@@ -487,7 +489,7 @@ agencies <- rbind(agencies,c("Total buyers",sum(agencies$count),100.0))
 
   
 ### Buyer Counts by Agency Category  
-`r kable(agencies)`  
+`r kables(agencies)`  
   
 `r plot_buyer_count_by_agency_category(buyers)`  
     
@@ -504,7 +506,7 @@ agencies_counts$percent <- round(agencies_counts$count/sum(agencies_counts$count
 agencies_counts <- rbind(agencies_counts,c("Total agencies",sum(agencies_counts$count),100.0))
 
 ```
-`r kable(agencies_counts)`     
+`r kables(agencies_counts)`     
   
 `r plot_agency_count_by_category(buyers)`    
 

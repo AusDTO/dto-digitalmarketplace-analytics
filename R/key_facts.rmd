@@ -53,7 +53,7 @@ tib           <- tibble('No. of panellists' = no_panellists,
                         '% of SME spend'    = perc_sme_spend)
 
 ```
-`r kable(tib)`  
+`r kables(tib)`  
 
 ## Key Facts  
 * The Digital Marketplace is an initiative under the National Innovation and Science

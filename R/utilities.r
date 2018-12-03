@@ -6,7 +6,7 @@ domains <- c("Software engineering and Development",
              "Agile delivery and Governance",
              "Content and Publishing",
              "Strategy and Policy",
-             "Change, Training and Transformation",
+             #"Change, Training and Transformation",
              "Cyber security",
              "Support and Operations",
              "Data science",
@@ -14,8 +14,19 @@ domains <- c("Software engineering and Development",
              "Marketing, Communications and Engagement",
              "Change and Transformation",
              "Training, Learning and Development")
+domains_regex <- x <- paste0("(",
+                             paste(domains,collapse =")|(")
+                             ,")|(Change, Training and Transformation)")
+
 log_filename     <- "MKT_reporting_log.csv"
-rel_path_data    <- "\\..\\data\\"
+# this can vary if scripts are run from different directories - especially likely for RMD
+# tests to see if the current WD is /R or /scratch
+rel_path_data    <- function() {
+  if (str_detect(getwd(),"R|(scratch)$")) {
+    return("\\..\\..\\data\\")
+  }
+  "\\..\\data\\"
+}
 rel_path_reports <- "\\reports\\"
 attachments_introduced <- as.Date("2017-04-04")
 dmp_sons         <- c("SON3413842","SON3364729")
@@ -38,7 +49,12 @@ auth <- function(header) {
   return(header)
 }
 
-datesSinceLaunch <- function() {data.frame(dates = seq(as.Date("2016-08-29"),Sys.Date(),by="day"))}
+# creates a data frame with each day, week or month since launch 
+# defaults to day
+datesSinceLaunch <- function(unit="day") {
+  data.frame(dates = seq(as.Date("2016-08-29"),Sys.Date(),by=unit)) %>%
+    mutate(dates = floor_date(dates,unit))
+}
 
 # API interface functions
 
@@ -104,8 +120,14 @@ fetchAllFromAPI <- function(getURL,auth,x) {
 
 # writes a data frame to a CSV file with label YYYYMMDD-suffix.csv
 writey <- function(x,suffix,includeHeader=TRUE, quote=TRUE, sep=",") {
-  write.table(x,file=paste(getwd(),rel_path_data,substr(as.POSIXct(Sys.time()),1,10),"-",suffix,".csv",sep=""),
+  write.table(x,file=paste(getwd(),rel_path_data(),substr(as.POSIXct(Sys.time()),1,10),"-",suffix,".csv",sep=""),
               sep=sep,quote=quote,row.names=FALSE,col.names=includeHeader)
+}
+
+# reads an older data file from the data directory. 
+#change the re_path_data if reading from another directory, or from a different relative location 
+ready <- function(filename,rel_path=rel_path_data()) {
+  read.csv(paste0(getwd(),rel_path,filename),stringsAsFactors = F)
 }
 
 
@@ -123,7 +145,7 @@ writer <- function(x,name) {
 # save each raw extract file as they're downloaded to avoid re-running the fetch-all functions that day 
 # new files overwrite previous versions.
 temp_save <- function(obj,obj_name) {
-  save(obj,file = paste0(getwd(),rel_path_data,obj_name,"-raw.rdata"))
+  save(obj,file = paste0(getwd(),rel_path_data(),obj_name,"-raw.rdata"))
 }
 
 format_mil <- function(x,digits=2,order="M",dollars="$") {
@@ -131,6 +153,19 @@ format_mil <- function(x,digits=2,order="M",dollars="$") {
     return (paste(dollars,round(x/1000000,digits=digits),"M",sep=""))
   } else {
     return (paste(dollars,round(x/1000,digits=digits),"K",sep=""))
+  }
+}
+
+read_from_google_sheet <- function(sheet_name,worksheet_name="") {
+  sheet <- gs_title(sheet_name)
+  if (worksheet_name=="") {
+    worksheets <- gs_ws_ls(sheet)
+    if (length(worksheets) > 1) {
+      stop("Need to specify a worksheet name, choose from the following: ",worksheets)
+    }
+    gs_read(sheet,ws = worksheets[1])
+  } else {
+    gs_read(sheet,ws = worksheet_name)
   }
 }
 
@@ -226,8 +261,8 @@ translate_specialist_role <- function(vec) {
 }
 
 translate_type <- function(v) {
-  types <- c("digital-outcome","digital-professionals")
-  t_types <- c("Outcome","Specialist")
+  types <- c("digital-outcome","digital-professionals","training","rfx")
+  t_types <- c("Outcome","Specialist","Training","RFX")
   translate(types,t_types,v)
 }
 
@@ -271,13 +306,18 @@ domains_from_emails <- function(emails) {
 }
 
 # compare contents in 2 vectors
-compare_vectors <- function(a,b,print=TRUE) {
+compare_vectors <- function(a,b,diffOnly=TRUE,print=TRUE) {
   if (print) {
-    cat("Common elements\n")
-    print(a[a %in% b])
+    if (diffOnly) {
+      common <- sum(a %in% b)
+      cat(paste0("Number of common entries: ",common,"\n"))
+    } else {
+      cat("Common elements\n")
+      print(a[a %in% b])
+    }
     cat("\nIn vector 1 only\n")
     print(a[!a %in% b])
-    cat("\nIn vector 1 only\n")
+    cat("\nIn vector 2 only\n")
     print(b[!b %in% a])
   } else {
     return(list(
@@ -288,12 +328,47 @@ compare_vectors <- function(a,b,print=TRUE) {
   }
 }
 
-generate_seller_contact_list <- function(sellers,users) {
-  l <- users %>%
-    filter(!is.na(seller_id),active) %>% #active users with a seller ID
-    select(seller_id,email_address) %>%
-    right_join(sellers,by=c("seller_id"="code"))
-  unique(c(str_to_lower(l$email_address),
-           str_to_lower(l$contact_email),
-           str_to_lower(l$auth_rep_email)))
-}  
+# Converts double quotes to singles for columns of class character
+# Double quote marks can cause issues with data written out as csv
+convert_quotes <- function(df) {
+  for (i in 1:ncol(df)) {
+    if (class(df[,i]) == "character") {
+      df[,i] <- gsub("\"","'",df[,i])
+    }
+  }  
+  return(df)
+}
+
+# simple wrapper for kable extra 
+kables <- function(x) {
+  kable(x) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+}
+
+# prepare a table of available data files 
+get_data_files <- function(rel_path = rel_path_data()) {
+  filenames = list.files(path=paste0(getwd(),rel_path))
+  files <- data.frame(str_match(filenames,"(\\d{4}\\-\\d{2}\\-\\d{2})\\-(.*)\\.csv"),stringsAsFactors=F)
+  names(files) <- c("filename","date","type")
+  files <- files %>% filter(!is.na(filename))
+  files$date <- as.Date(files$date)
+  return(files)
+}
+
+# reloads the latest contracts file that is at least 'days' old
+last_contracts_file <- function(days=7) {
+  files <- get_data_files() %>% 
+    filter(type=="contracts") %>%
+    filter(date <= Sys.Date() - days)
+  filename <- files[which(files$date == max(files$date)),]$filename
+  return(filename)
+}
+
+# apply some simple regularisation rules to the column names of a data frame
+cleanup_df_names <- function(df) {
+  n <- names(df)
+  n <- str_to_lower(n)
+  n <- gsub("[\\(\\)]",".",n)
+  n <- gsub("\\s+","_",n)
+  names(df) <- n
+  return(df)
+}

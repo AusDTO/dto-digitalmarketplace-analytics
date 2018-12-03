@@ -129,7 +129,7 @@ plot_agency_count_by_category_2 <- function(agencies,publish=FALSE) {
 # plots a distribution of day rates for specialist briefs based on seller responses
 plot_violins_of_day_rates <- function(bR) {
   # violin plots by area of expertise
-  vals <- briefResponses %>% filter(!is.na(areaOfExpertise),
+  vals <- bR %>% filter(!is.na(areaOfExpertise),
                                     !is.na(dayRate),
                                     dayRate > 450,dayRate < 4000)
   add_density_plot <- function(p,bR,i,color) {

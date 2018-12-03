@@ -37,4 +37,5 @@ vignettes/*.pdf
 *.pdf
 *.doc
 *.docx
+*.txt
 .httr-oauth
