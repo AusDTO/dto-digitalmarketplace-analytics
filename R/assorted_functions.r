@@ -200,3 +200,12 @@ generate_contacts_for_expired_docs <- function(sellers,users) {
   }
   return(contacts)
 }
+
+filter_cns_to_latest_amendment <- function(cns) {
+  ids <- cns %>% 
+    group_by(CN.ID) %>%
+    summarise(last_amendment = max(Amendment)) %>%
+    mutate(unique.id = paste(CN.ID,last_amendment,sep="."))
+  
+  cns %>% filter(unique.id %in% ids$unique.id) %>% mutate(month = floor_date(published,unit="month"))
+}

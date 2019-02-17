@@ -68,17 +68,24 @@ Number of open briefs: `r dim(bl)[1]`
   
 ### Recently Closed  
 ```{r echo=FALSE}
-brc <- briefs[briefs$status=="closed"
-                     &(Sys.Date() - string_to_date(briefs$published)) < 30,] 
+#brc <- briefs[briefs$status=="closed"
+#                     &(Sys.Date() - string_to_date(briefs$published)) < 30,] 
 #brc$brief_closed <- string_to_date(brc$published) + 7
 #brc[brc$duration=="2 weeks","brief_closed"] <- 
 #                    brc[brc$duration=="2 weeks","brief_closed"] + 7.5
-brc$brief_closed <- brc$close
-brc <- brc[,c("id","title","organisation","openTo","type","published","brief_closed")]
-brc <- merge(brc,b_apps,by.x="id",by.y="id",all.x=TRUE)
-brc <- brc[order(brc$brief_closed,decreasing=TRUE),]
+#brc$brief_closed <- brc$close
+#brc <- brc[,c("id","title","organisation","openTo","type","published","brief_closed")]
+#brc <- merge(brc,b_apps,by.x="id",by.y="id",all.x=TRUE)
+#brc <- brc[order(brc$brief_closed,decreasing=TRUE),]
 #brc$brief_closed <- date_to_string(brc$brief_closed)
-brc[is.na(brc$applications),]$applications <- 0
+#brc[is.na(brc$applications),]$applications <- 0
+
+brc <- briefs %>%
+  filter(status=="closed",Sys.Date() - string_to_date(published) < 30) %>%
+  mutate(brief_closed = close) %>%
+  select(id,title,organisation,openTo,type,published,brief_closed) %>%
+  left_join(b_apps,by="id") %>%
+  replace_na(list(applications=0))
 ```
 `r kables(brc)`  
   

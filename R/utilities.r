@@ -1,5 +1,6 @@
 # configuration
 prod_api_url <- "https://dm-api.apps.b.cld.gov.au/api/"
+rc_api_url   <- "https://dm-rc.apps.y.cld.gov.au/api/"
 
 domains <- c("Software engineering and Development",
              "User research and Design",
@@ -14,6 +15,8 @@ domains <- c("Software engineering and Development",
              "Marketing, Communications and Engagement",
              "Change and Transformation",
              "Training, Learning and Development")
+thresholds <- tibble(aoe=domains,
+                     aoe_max_price = c(1760,1906,1767,1472,2491,2200,1384,1894,1925,2068,2420,2420))
 domains_regex <- x <- paste0("(",
                              paste(domains,collapse =")|(")
                              ,")|(Change, Training and Transformation)")
@@ -120,6 +123,11 @@ fetchAllFromAPI <- function(getURL,auth,x) {
 
 # writes a data frame to a CSV file with label YYYYMMDD-suffix.csv
 writey <- function(x,suffix,includeHeader=TRUE, quote=TRUE, sep=",") {
+  # 
+  if (class(x)[1] == "character") {
+    includeHeader = FALSE
+  }
+  
   write.table(x,file=paste(getwd(),rel_path_data(),substr(as.POSIXct(Sys.time()),1,10),"-",suffix,".csv",sep=""),
               sep=sep,quote=quote,row.names=FALSE,col.names=includeHeader)
 }
@@ -371,4 +379,17 @@ cleanup_df_names <- function(df) {
   n <- gsub("\\s+","_",n)
   names(df) <- n
   return(df)
+}
+
+# convenience function for pasting a tab delimited file into R
+readClip <- function(header=T,delimiter="\t") {
+  read.table("clipboard",header = header,sep = delimiter,stringsAsFactors = F)
+}
+
+# writes a data frame to the clipboard
+# Collapses the dataframe into a tab delimited format, which can be pasted straight into Excel
+# WARNING - it's a bit primitive at the moment. Won't work so will if there are embedded tabs
+writeClip <- function(df) {
+  lines <- apply(df,1,function(x) {paste(x,collapse = "\t")})
+  writeClipboard(lines)
 }

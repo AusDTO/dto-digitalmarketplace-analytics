@@ -19,6 +19,9 @@ rm(assets, created_assets)
 if (!exists("header")) {
   header <- prompt_auth()
 }
+if (!exists("con")) {
+  con <- db_connect_local()
+}
 if (!exists("cns")) {
   cns <- load_austender_cns()
 }
@@ -31,6 +34,7 @@ contributors   <- process_contributors(users)
     s_list     <- extract_sellers(header) 
 sellers        <- s_list$sellers
 case_studies   <- s_list$case_studies
+seller_domains <- s_list$seller_domains
     s_list     <- NULL
 briefsExtract  <- extract_briefs(header,FALSE)
 briefs         <- process_briefs(briefsExtract,buyers,FALSE)
@@ -43,6 +47,7 @@ contracts      <- extract_austender() %>% process_contracts(sellers)
 feedback       <- extract_feedback(header)
 agency_summary <- process_agency_summary(buyers,briefs,contracts)
 cns            <- update_contract_summary_notices(cns)
+panels         <- extract_panel_listing()
 #sellerMailList <- process_seller_email_list(sellers,contributors,apps)
 
 # write useful observations to a log  
@@ -50,6 +55,10 @@ log_current_observations(timestamp)
 
 # save the extracted data to local drive
 save_data()
+# update database tables
+save_to_db()
+
+
 
 # generate the standard Knitr reports
 standard_reports()

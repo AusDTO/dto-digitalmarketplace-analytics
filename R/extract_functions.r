@@ -72,6 +72,20 @@ extract_sellers <- function(header,include_deleted = FALSE) {
                       paste0("maxPrice.",gsub(" ","_",domains)),
                       "signed_agreement_date")
   
+  extract_domains_table <- function(x) {
+    ids <- x$code
+    domains <- x$domains$all
+    for (i in seq_along(ids)) {
+      if (nrow(domains[[i]]) > 0) {
+        domains[[i]]$code <- ids[i]
+      }
+    }
+    
+    bind_rows(domains) %>%
+      select(code,domain_name,price_status,status) %>%
+      rename(aoe = domain_name)
+  }
+  
   process_raw_sellers <- function(df) {
     df <- df[!is.na(df$status),]        # filter out the ORAMS sellers
     if (!include_deleted) { 
@@ -137,14 +151,17 @@ extract_sellers <- function(header,include_deleted = FALSE) {
   }
    
   #sellers_query <- "https://dm-api.apps.platform.digital.gov.au/api/suppliers"
-  sellers_query <- prod_api("suppliers")
-  sellers_raw   <- fetchAllFromAPI(sellers_query,header,list())
+  sellers_query  <- prod_api("suppliers")
+  sellers_raw    <- fetchAllFromAPI(sellers_query,header,list())
   temp_save(sellers_raw,"Sellers")
-  case_studies  <- extract_case_studies(sellers_raw)
-  sellers       <- bind_rows(lapply(sellers_raw,process_raw_sellers))
-  sellers       <- fill_logicals(sellers)
+  case_studies   <- extract_case_studies(sellers_raw)
+  seller_domains <- bind_rows(lapply(sellers_raw,extract_domains_table))
+  sellers        <- bind_rows(lapply(sellers_raw,process_raw_sellers))
+  sellers        <- fill_logicals(sellers)
   attr(sellers,"timestamp") <- Sys.time()
-  return(list(sellers=sellers,case_studies=case_studies))
+  attr(seller_domains,"timestamp") <- Sys.time()
+  attr(case_studies,"timestamp") <- Sys.time()
+  return(list(sellers=sellers,case_studies=case_studies,seller_domains=seller_domains))
 }
 
 extract_briefs  <- function(header, return_all = FALSE) {
@@ -152,13 +169,77 @@ extract_briefs  <- function(header, return_all = FALSE) {
   briefShortFilter <- c("id","status","title","organisation","sellerSelector",
                         "specialistRole","areaOfExpertise","budgetRange","contractLength","publishedAt",
                         "createdAt","duration","close","frameworkFramework","lot","updatedAt",
-                        "phase","essentials","nicetohaves")
+                        "phase","essentials","nicetohaves","invitedSellerEmails","invitedSellerIDs")
   briefPresentationFilter <- c("id","status","title","organisation","openTo",
                                "type","specialistRole","areaOfExpertise","budgetRange","contractLength",
-                               "created","published","close","duration","frameworkFramework",
+                               "created","published","close","duration","invitedSellerEmails",
+                               "invitedSellerIDs", #"frameworkFramework",
                                "updatedAt","phase","essentials","nicetohaves")
-
+  
+  # legacy version, extracts from the sellerEmailList and/or sellerEmail columns
+  extract_invited_seller_emails <- function(br) {
+    # Check the sellerEmailList columm exists in this set of data 
+    if ("sellerEmailList" %in% names(br)) {
+      s_list <- br$sellerEmailList
+    } else {
+      s_list <- rep(list(""),nrow(br))
+    }
     
+    # check the sellerEmail column exists, and if so, take values in this column in preference
+    if ("sellerEmail" %in% names(br)) {
+      s_list <- lapply(seq_along(s_list),
+                        function(x,s_list,emails) {
+                          if(!is.na(emails[x])) {
+                            return(emails[x])
+                          }
+                          s_list[[x]]
+                        },
+                        s_list=s_list,
+                        emails=br$sellerEmail)
+    }
+    s_vec <- sapply(s_list,function(x) paste0(x,collapse="|"))
+    return(s_vec)
+  }  
+  
+  # new version, extracts the list of sellers invited
+  extract_invited_seller_ids <- function(br) {
+    if ("sellers" %in% names(br)) {
+      s <- br$sellers
+    } else {
+      return(rep("",nrow(br)))
+    }
+    
+    # somehow the sellers column can be empty
+    if (ncol(s) ==0) {
+      return(rep("",nrow(br)))
+    }
+    
+    # if there's only 1 seller, the data structure is different...
+    if (ncol(s) == 1) {
+      seller_id  <- names(s)[1]
+      seller_ids <- apply(s,1,function(x) {x})
+      seller_ids[!is.na(seller_ids)] <- seller_id
+      seller_ids[is.na(seller_ids)]  <- ""
+      return(seller_ids)
+    }
+    
+    #matrix of sellers by brief
+    m     <- t(apply(s,1,function(x) {sapply(x,is.na)}))
+    s_ids <- attr(m,"dimnames")[[2]]
+    m     <- data.frame(m)
+    names(m) <- s_ids
+    se    <- m %>% 
+      mutate(id = br$id) %>%
+      gather(key="seller_id",value="invited",-id) %>%
+      mutate(invited = !invited) %>%
+      filter(invited) %>%
+      group_by(id) %>%
+      summarise(invited_sellers = paste(seller_id,collapse = "|")) %>%
+      right_join(select(br,id),by="id") %>%
+      replace_na(list(invited_sellers=""))
+    
+    return(se$invited_sellers)
+  }
 
   # cleans up the briefs data.frame
   processBriefs <- function(briefs) {
@@ -166,6 +247,8 @@ extract_briefs  <- function(header, return_all = FALSE) {
     if (is.null(briefs$publishedAt)) {
       briefs$publishedAt <- NA
     }
+    briefs$invitedSellerEmails <- extract_invited_seller_emails(briefs)
+    briefs$invitedSellerIDs    <- extract_invited_seller_ids(briefs)
     briefs$duration  <- briefs$dates$application_open_weeks
     briefs$close     <- string_to_date(briefs$dates$closing_date,format="%Y-%m-%d")
     if (is.null(briefs$essentialRequirements)) {
@@ -311,6 +394,23 @@ extract_applications <- function(header) {
       names(x) <- paste0("maxPrice.",gsub(" ","_",names(x)))
       x
     }
+    
+    # extracts the list of services in x$services
+    extract_services <- function(x) {
+      domains             <- x$services
+      domains$no_services <- rowSums(domains,na.rm=TRUE) == 0 
+      domains$id <- x$id
+      
+      domains %>% 
+        gather(key="aoe",value="nominated",-id,na.rm=TRUE) %>%
+        filter(nominated) %>%
+        mutate(aoe = case_when(
+                       aoe == "no_services" ~ "",
+                       TRUE                 ~ aoe
+                     )) %>%
+        group_by(id) %>%
+        summarise(services = paste(aoe,collapse="|"))
+    }
 
     signed_at <- function(x) {
       if (length(x) > 0) {
@@ -354,12 +454,13 @@ extract_applications <- function(header) {
     df$government_experience <- NULL
     df$products          <- NULL
     df$recruiter_info    <- NULL
+    df$regional          <- NULL
     df <- cbind(df,df$seller_type)
     df$seller_type       <- NULL
     df$seller_types      <- NULL
-    df$services[is.na(df$services)] <- FALSE
-    df <- cbind(df,df$services)
-    df$services          <- apply(df$services,1,sum)
+    #df$services[is.na(df$services)] <- FALSE
+    #df <- cbind(df,df$services)
+    #df$services          <- apply(df$services,1,sum)
     #df <- cbind(df,df$steps)
     df$steps             <- NULL
     df                   <- cbind(df,df$address[,c("address_line","country","postal_code","state","suburb")])
@@ -407,6 +508,12 @@ extract_applications <- function(header) {
       df$is_recruiter   <- as.logical(df$is_recruiter)
     }
     df[!is.na(df$submitted_at)&df$status=="saved","status"] <- "reverted"
+    df[,names(df)[str_detect(names(df),"\\-")]]             <- NULL
+    
+    # leave to the end as the left_join doesn't like it until df is a simple data.frame
+    extracted_services                                      <- extract_services(df)
+    df$services                                             <- NULL
+    df <- df %>% left_join(extracted_services,by="id")
     return(df)
   }
   
@@ -447,6 +554,7 @@ extract_seller_prices <- function(rs) {
   
   bind_rows(lapply(rs,extract_from_batch))
 }
+
 
 # just extracts basic details about domain assessment requests
 extract_assessments <- function(header) {
@@ -518,6 +626,78 @@ extract_austender <- function(sons = c("SON3413842","SON3364729")) {
   x <- bind_rows(lapply(sons,extract_son))
   attr(x,"timestamp") <- Sys.time()
   return(x)
+}
+
+# extracts a list of panels from Austender - returns the list of all currently open panels
+extract_panel_listing <- function() {
+  fetch_panels <- function() {
+    url <- "https://www.tenders.gov.au/?event=public.SON.searchDownload&download=true&atmtype=archived%2Cclosed%2Cpublished%2Cproposed&keywordtypesearch=AllWord&postcode=&valuefrom=&datestart=01%2DJul%2D2017&keyword=&contractto=&suppliername=&valueto=&category=&agencyuuid=&panelarrangement=&orderBy=Relevance&agencyreporttype=&type=sonSearchEvent&portfoliouuid=&participantstatus=&dateend=&publishfrom=&supplierabn=&datetype=current&agencyrefid=&multiagencyaccess=&contractfrom=&atmid=&agencyStatus=&numagencystatus=%2D1&publishto=&sonid=&multype=archived%2Cclosed%2Cpublished"
+    getdata<-GET(url=url)  
+    cont <- content(getdata,as="text")
+    cat(".")
+    return(cont)
+  }
+  cont <- fetch_panels()
+  x <- strsplit(cont,"\\r\\n")[[1]]
+  header_line <- which(str_detect(x,"^SON ID\\tTitle"))
+  headings    <- strsplit(x[header_line],"\\t")[[1]]
+  headings    <- gsub("\\s+","\\.",headings)
+  y <- x[(header_line+1):length(x)]
+  z <- strsplit(y,"\\t")
+  df <- data.frame(do.call(rbind,z),stringsAsFactors = FALSE)
+  names(df) <- headings
+  df$Publish.Date          <- string_to_date(df$Publish.Date,"%d-%b-%y")
+  df$Contract.Start.Date   <- string_to_date(df$Contract.Start.Date,"%d-%b-%y")
+  df$Contract.End.Date     <- string_to_date(df$Contract.End.Date,"%d-%b-%y")
+  for (i in c(1,2,3,5,8,9)) {
+    df[,i] <- gsub('[\\"\\=]+','',df[,i])
+  }
+  return(df)
+}
+
+# fetches a list of sellers for a given SON.ID from Austender
+extract_vendors_from_panel <- function(son) {
+
+  fetch_panel_listing <- function(son) {
+    url <- paste0("https://www.tenders.gov.au/?event=public.advancedsearch.CNSONRedirect&type=sonSearchEvent&keyword=&KeywordTypeSearch=AllWord&SONID=",
+                  son,
+                  "&dateType=Publish+Date&dateStart=&dateEnd=&MultiAgencyAccess=&panelArrangement=&supplierName=&supplierABN=&ATMID=&AgencyRefId="  )
+    getdata<-GET(url=url)  
+    cont <- content(getdata,as="text")
+    #cat(".")
+    return(cont)
+  }
+  
+  fetch_panel_page <- function(url) {
+    url <- paste0("https://www.tenders.gov.au/",url)
+    getdata<-GET(url=url)  
+    cont <- content(getdata,as="text")
+    cat(".")
+    return(cont)
+  }
+  
+  pl         <- fetch_panel_listing(son)
+  pl_split   <- str_split(pl,"\\r\\n")[[1]]
+  deets_line <- pl_split[str_detect(pl_split,"Full Details")]
+  url        <- str_match(deets_line,"/\\?event=[^\"]+")[1,1]
+  pp         <- fetch_panel_page(url)
+  x          <- str_split(pp,"(#Suppliers)|(#Agency)")[[1]][2]
+  y          <- str_match_all(x,"<td>[^<]*</td>")[[1]]
+  z          <- str_remove_all(y,"</?td>")
+  p_sellers  <- data.frame(matrix(z,ncol=4,byrow=TRUE),stringsAsFactors = FALSE)
+  names(p_sellers) <- c("Name","ABN","State","Postcode")
+  p_sellers$ABN    <- str_remove_all(p_sellers$ABN,"[^\\d]+")
+  p_sellers$Name   <- gsub('"',"'",p_sellers$Name)
+  return(p_sellers)
+}
+
+extract_sellers_from_panels <- function(sons) {
+  fetch_individual_son <- function(son) {
+    extract_vendors_from_panel(son) %>%
+      mutate(`SON.ID` = son) %>%
+      select(SON.ID,Name,ABN,State,Postcode)
+  }
+  bind_rows(lapply(sons,fetch_individual_son))
 }
 
 extract_feedback <- function(header) {
@@ -593,7 +773,8 @@ extract_case_studies <- function(sellers_raw) {
                challenge     = css$opportunity,
                approach      = css$approach,
                outcomes      = sapply(css$outcome,collapse_cs),
-               links         = sapply(css$project_links,collapse_cs)
+               links         = sapply(css$project_links,collapse_cs),
+               status        = css$status
         )
     }
   }

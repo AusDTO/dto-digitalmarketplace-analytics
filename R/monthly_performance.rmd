@@ -59,6 +59,7 @@ b <- b_m %>%
             specialist = sum(type == "Specialist")/n()*100,
             outcome    = sum(type == "Outcome")/n()*100,
             training   = sum(type == "Training")/n()*100,
+            rfx        = sum(type == "RFX")/n()*100,
             comm_cce   = sum(entities == "CCE")/n()*100,
             local      = sum(entities == "Local")/n()*100,
             comm_ncce  = sum(entities == "NCCE")/n()*100,
@@ -70,6 +71,7 @@ b <- b_m %>%
             specialist_total = sum(type == "Specialist"),
             outcome_total    = sum(type == "Outcome"),
             training_total   = sum(type == "Training"),
+            rfx_total        = sum(type == "RFX"),
             comm_cce_total   = sum(entities == "CCE"),
             local_total      = sum(entities == "Local"),
             comm_ncce_total  = sum(entities == "NCCE"),
@@ -78,11 +80,7 @@ b <- b_m %>%
             )
 b_rep  <- b[which(b$publish_month==reporting_month),]
 b_prev <- b[which(b$publish_month==previous_month),]
-p <- plot_ly(data=b,x=~publish_month,y=~count,type="scatter",mode="lines+markers") %>%
-  layout(title = "Count of briefs published each month",
-         xaxis = list(title="month published"),
-         yaxis = list(title="briefs published",range=c(0,100)))
-```
+```  
 
 # Briefs   
 <br />
@@ -94,6 +92,19 @@ p <- plot_ly(data=b,x=~publish_month,y=~count,type="scatter",mode="lines+markers
 
 ## Number of briefs published  
 <br />  
+```{r,echo=FALSE}
+b_lo <- b %>% 
+  mutate(month = seq_along(publish_month)) %>%
+  loess(count ~ month,data=.,span=0.4)
+b$smoothed <- b_lo$fitted
+
+p <- plot_ly(data=b,x=~publish_month,y=~count,type="scatter",mode="lines+markers",name="briefs") %>%
+  add_trace(y=~smoothed,name="briefs trend") %>%
+  layout(title = "Count of briefs published each month",
+         xaxis = list(title="month published"),
+         yaxis = list(title="briefs published",range=c(0,max(b$count))))
+#p
+```
 `r p`  
   
   
@@ -121,6 +132,7 @@ p2 <- plot_ly(data=b,x=~publish_month,y=~all_total,name="all",type="scatter",mod
 ```
   
 `r p1`  
+<br />  
 `r p2`  
 
 ## Split of briefs by type  
@@ -130,6 +142,7 @@ p2 <- plot_ly(data=b,x=~publish_month,y=~all_total,name="all",type="scatter",mod
 p3 <- plot_ly(data=b,x=~publish_month,y=~outcome,name="outcomes",type="scatter",mode="lines+markers") %>%
   add_trace(y=~specialist,name="specialists") %>%
   add_trace(y=~training,name="training") %>%
+  add_trace(y=~rfx,name="RFX") %>%
     layout(title = "Percentage of briefs by type",
          xaxis = list(title=""),
          yaxis = list(title="percentage",range=c(0,100)),
@@ -138,6 +151,7 @@ p3 <- plot_ly(data=b,x=~publish_month,y=~outcome,name="outcomes",type="scatter",
 p4 <- plot_ly(data=b,x=~publish_month,y=~outcome_total,name="outcomes",type="scatter",mode="lines+markers") %>%
   add_trace(y=~specialist_total,name="specialists") %>%
   add_trace(y=~training_total,name="training") %>%
+  add_trace(y=~rfx_total,name="RFX") %>%
   add_trace(y=~count,name="total") %>%
     layout(title = "Number of briefs by type",
          xaxis = list(title=""),
@@ -147,6 +161,7 @@ p4 <- plot_ly(data=b,x=~publish_month,y=~outcome_total,name="outcomes",type="sca
 ```
 
 `r p3`  
+<br />  
 `r p4`   
 
 # Buyers  
@@ -188,8 +203,102 @@ p7 <- plot_ly(data=b,x=~publish_month,y=~comm_ncce_total,name="Comm NCCE",type="
 
 ```  
 `r p6`  
+<br />  
 `r p7`  
 
+---  
+
+
+# Contracts  
+## Briefs vs Contracts  
+```{r,echo=FALSE}
+b_ncce <- b_m %>%
+  filter(entities == "NCCE") %>%
+  group_by(publish_month) %>%
+  summarise(count = n())
+
+b_lo <- b_ncce %>% 
+  mutate(month = seq_along(publish_month)) %>%
+  loess(count ~ month,data=.,span=0.4)
+b_ncce$smoothed <- b_lo$fitted
+
+c_summary <- c_m %>% 
+  group_by(month) %>%
+  summarise(count=n()) %>%
+  ungroup() %>%
+  mutate(month_seq = seq_along(month))
+
+c_smooth <- c_summary %>%  
+  loess(count ~ month_seq,data=.,span=0.4)
+
+c_summary$smoothed <- c_smooth$fitted
+
+p <- plot_ly(data=b_ncce,x=~publish_month,y=~count,
+             type="scatter",mode="lines+markers",name="briefs",
+             opacity=0.4) %>%
+  add_trace(y=~smoothed,name="briefs trend",opacity=1.0) %>%
+  add_trace(x=c_summary$month,y=c_summary$count,name="contracts",opacity=0.4) %>%
+  add_trace(x=c_summary$month,y=c_summary$smoothed,name="contracts trend",opacity=1.0) %>%
+  layout(title = "Count of briefs and contracts published each month",
+         xaxis = list(title="month published"),
+         yaxis = list(title="briefs published",range=c(0,max(c_summary$count))))
+
+```  
+`r p`  
+
+Only briefs published by non corporate commonwealth entities are shown, as these are the only agencies publishing contracts through Austender.  
+  
+  
+
+## Percentage of contracts to SMEs by month   
+<br />  
+```{r,echo=FALSE}
+c_cum <- c_m %>% 
+  arrange(Publish.Date) %>%
+  mutate(month = floor_date(Publish.Date,unit="month")) %>%
+  group_by(month,sme_by_employees) %>%
+  summarise(
+    count = n(),
+    value = sum(Value)
+  ) %>%
+  mutate(seller_type = case_when(
+    sme_by_employees == TRUE ~ "SME",
+    TRUE ~ "Enterprise"
+  )) %>%
+  ungroup() %>%
+  select(-sme_by_employees)
+
+by_count <- c_cum %>%
+  select(-value) %>%
+  spread(seller_type,count,fill=0) %>% 
+  mutate(net_SME = cumsum(SME),
+         net_Ent = cumsum(Enterprise),
+         cumulative_SME_perc = net_SME/(net_SME+net_Ent)*100,
+         monthly_SME_perc = SME /(SME+Enterprise)*100)
+
+p8 <- plot_ly(data=by_count,x=~month,y=~cumulative_SME_perc,type="scatter",mode="lines+markers",name="Cumulative") %>%
+  add_trace(y=~monthly_SME_perc,name="Monthly") %>%
+  layout(title="Percentage of contracts awarded to SMEs",
+         yaxis = list(title="Percentage of contracts awarded to SME"))
+
+by_value <- c_cum %>%
+  select(-count) %>%
+  spread(seller_type,value,fill=0) %>% 
+  mutate(net_SME = cumsum(SME),
+         net_Ent = cumsum(Enterprise),
+         cumulative_SME_perc = net_SME/(net_SME+net_Ent)*100,
+         monthly_SME_perc = SME /(SME+Enterprise)*100)
+
+p9 <- plot_ly(data=by_value,x=~month,y=~cumulative_SME_perc,type="scatter",mode="lines+markers",name="Cumulative") %>%
+  add_trace(y=~monthly_SME_perc,name="Monthly") %>%
+  layout(title="Percentage of contract value awarded to SMEs",
+         yaxis = list(title="Percentage of contract value awarded to SME"))
+```  
+`r p8`  
+<br />  
+`r p9`  
+
+## 
 ## Top buyers publishing  
 ## Top buyers by contracts published  
 ## New agencies this month  

@@ -111,11 +111,13 @@ extract_brief_details <- function(briefs,header) {
            createdAt            = date_to_string(parse_utc_timestamp_date(createdAt)),
            publishedAt          = date_to_string(parse_utc_timestamp_date(publishedAt)),
            updatedAt            = date_to_string(parse_utc_timestamp_date(updatedAt))) %>%
-    left_join(b,by="id") %>%
-    select(one_of(columns$columns))
+    left_join(b,by="id") # %>%
+    #select(one_of(columns$columns))
   b_[is.na(b_$applicationsClosedAt),]$applicationsClosedAt <-   b_[is.na(b_$applicationsClosedAt),]$publishedAt
   b_ <- as.data.frame(sapply(b_,cleanups),stringsAsFactors = F)
-  names(b_) <- columns$column_names  
+  columns   <- columns %>% filter(columns %in% names(b_))
+  b_        <- select(b_,one_of(columns$columns))
+  names(b_) <- columns$column_names 
   b_[is.na(b_)] <- ""
   
   return(b_)
@@ -123,8 +125,10 @@ extract_brief_details <- function(briefs,header) {
 
 # reads the last briefs summary file and looks for any briefs that have been updated
 # since the summary file (marketplace_briefs.csv) was last updated, or are new. 
+# also removes any briefs that are withdrawn
 update_brief_details <- function(briefs) {
 
+  # read the briefs already extracted
   b_last <- read.csv(file=paste0(getwd(),rel_path_reports,"marketplace_briefs.csv"),
                      stringsAsFactors = FALSE,
                      colClasses="character")
@@ -133,14 +137,17 @@ update_brief_details <- function(briefs) {
     select(Opportunity_ID,last_updated) %>%
     mutate(last_updated = string_to_date(last_updated))
   
+  # which briefs have been updated or published since the last update 
   b_updated <- briefs %>% 
     filter(updatedAt >= max(b_last_ids$last_updated)) %>%
     extract_brief_details(header)
 
+  # combine the new and old sets of briefs
   b <- b_last %>% 
     filter(!Opportunity_ID %in% b_updated$Opportunity_ID) %>%
-    bind_rows(b_updated)
-  
+    bind_rows(b_updated) %>%
+    filter(Opportunity_ID %in% briefs$id)
+
   return(b)
 }
 

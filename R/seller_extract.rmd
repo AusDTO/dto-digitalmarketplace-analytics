@@ -8,7 +8,7 @@ output:
 params:
   seller: 
     label: seller
-    value: Cirrus
+    value: dummy
     input: textInput
 ---
 
@@ -29,6 +29,8 @@ if (!exists("buyers")) {
   ## load the files - ensure these files are already produced
   load(paste0(getwd(),rel_path_data(),substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
 }
+
+
 ```
   
 

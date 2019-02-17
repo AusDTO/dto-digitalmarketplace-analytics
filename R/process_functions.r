@@ -217,7 +217,10 @@ process_sellers_and_applications <- function(s,a,u) {
 process_contracts <- function(contracts,sellers) {
   c <- contracts
   s <- sellers
-  contracts <- left_join(c,s,by=c("Supplier.ABN" = "abn"))
+  contracts <- contracts %>%
+    ## quick hack... will need a better solution for sellers when they're deleted
+    mutate(Supplier.ABN = replace(Supplier.ABN, Supplier.ABN=="40257684711","34616970471")) %>%
+    left_join(s,by=c("Supplier.ABN" = "abn"))
   attr(contracts,"timestamp") <- Sys.time()
   return(contracts)
 }
@@ -235,7 +238,12 @@ process_seller_contact_list <- function(sellers,users) {
 }  
 
 # produce a summary file of agencies and their activity
-process_agency_summary <- function(buyers,briefs,contracts) {
+process_agency_summary <- function(buyers,briefs,contracts,
+                                   date_from = as.Date("2016-01-01"),date_to = Sys.Date()) {
+  # filter the briefs & contracts data to the date range
+  briefs    <- briefs    %>% filter(published >= date_from,published <= date_to)
+  contracts <- contracts %>% filter(Publish.Date >= date_from,Publish.Date <= date_to)
+  
   # optionally map the values in v to the mapped value in mappings
   # mappings has columns 
   map_values <- function(v,mappings) {
@@ -297,3 +305,5 @@ process_agency_summary <- function(buyers,briefs,contracts) {
   attr(agency_summary,"timestamp") <- Sys.Date()
   return(agency_summary)
 }
+
+

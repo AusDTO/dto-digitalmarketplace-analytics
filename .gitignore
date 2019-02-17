@@ -25,6 +25,8 @@ vignettes/*.pdf
 # none of the data files or reports
 /data/
 /reports/
+# ignore Shiny in development
+/shiny/dev*
 # Temporary files created by R markdown
 *.utf8.md
 *.knit.md
@@ -38,4 +40,6 @@ vignettes/*.pdf
 *.doc
 *.docx
 *.txt
+*.zip
+*.png
 .httr-oauth

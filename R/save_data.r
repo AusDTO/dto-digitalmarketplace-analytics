@@ -7,7 +7,7 @@ save_data <- function() {
                                %in% 
                                qw("apps users sellers buyers briefResponses briefs 
                                    assessments contracts feedback all_sellers case_studies
-                                  agency_summary")
+                                  agency_summary mkt_briefs")
                                ]
   save(list = objects_list,
        file = paste0(getwd(),rel_path_data(),substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
@@ -25,6 +25,14 @@ save_data <- function() {
   writer(agency_summary,"agency-summary")
   writer(generate_seller_list(sellers),"sellers")
   writer(mkt_briefs,"marketplace_briefs")
+  writer(panels,"list_of_sons")
+}
+
+save_to_db <- function() {
+  if (!exists("con")|!dbIsValid(con)) {
+    con <- db_connect_local()
+  }
+  db_append_dmp_contracts(con,contracts)
 }
 
 
