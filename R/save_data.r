@@ -7,11 +7,7 @@ save_data <- function() {
                                %in% 
                                qw("apps users sellers buyers briefResponses briefs 
                                    assessments contracts feedback all_sellers case_studies
-<<<<<<< HEAD
                                   agency_summary mkt_briefs j_tickets")
-=======
-                                  agency_summary mkt_briefs")
->>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
                                ]
   save(list = objects_list,
        file = paste0(getwd(),rel_path_data(),substr(as.POSIXct(Sys.time()),1,10),".Rdata"))

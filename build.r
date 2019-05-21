@@ -17,7 +17,6 @@ assets <- list.files(path = "R", pattern = "\\.r$", full.names = TRUE)
 created_assets <- lapply(assets, source)
 rm(assets, created_assets)
 
-<<<<<<< HEAD
 #if (!exists("header")) {
 #  header <- prompt_auth()
 #}
@@ -27,17 +26,6 @@ rm(assets, created_assets)
 #if (!exists("cns")) {
 #  cns <- load_austender_cns()
 #}
-=======
-if (!exists("header")) {
-  header <- prompt_auth()
-}
-if (!exists("con")) {
-  con <- db_connect_local()
-}
-if (!exists("cns")) {
-  cns <- load_austender_cns()
-}
->>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
 
 timestamp      <- Sys.time()
 
@@ -60,16 +48,10 @@ seller_exceptions <- extract_exceptions() # sellers that have been removed
 contracts      <- extract_austender() %>% process_contracts(sellers,seller_exceptions)
 feedback       <- extract_feedback(header())
 agency_summary <- process_agency_summary(buyers,briefs,contracts)
-<<<<<<< HEAD
 #cns            <- update_contract_summary_notices(cns)
 panels         <- extract_panel_listing()
 j_tickets      <- update_jira_tickets()
 generate_austender_update(sellers)
-=======
-cns            <- update_contract_summary_notices(cns)
-panels         <- extract_panel_listing()
-#sellerMailList <- process_seller_email_list(sellers,contributors,apps)
->>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
 
 # write useful observations to a log  
 log_current_observations(timestamp)
@@ -77,11 +59,7 @@ log_current_observations(timestamp)
 # save the extracted data to local drive
 save_data()
 # update database tables
-<<<<<<< HEAD
 #save_to_db()
-=======
-save_to_db()
->>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
 
 
 

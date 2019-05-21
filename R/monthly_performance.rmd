@@ -65,10 +65,7 @@ b <- b_m %>%
             outcome    = sum(type == "Outcome")/n()*100,
             training   = sum(type == "Training")/n()*100,
             rfx        = sum(type == "RFX")/n()*100,
-<<<<<<< HEAD
             atm        = sum(type == "ATM")/n()*100,
-=======
->>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
             comm_cce   = sum(entities == "CCE")/n()*100,
             local      = sum(entities == "Local")/n()*100,
             comm_ncce  = sum(entities == "NCCE")/n()*100,
@@ -81,10 +78,7 @@ b <- b_m %>%
             outcome_total    = sum(type == "Outcome"),
             training_total   = sum(type == "Training"),
             rfx_total        = sum(type == "RFX"),
-<<<<<<< HEAD
             atm_total        = sum(type == "ATM"),
-=======
->>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
             comm_cce_total   = sum(entities == "CCE"),
             local_total      = sum(entities == "Local"),
             comm_ncce_total  = sum(entities == "NCCE"),
@@ -156,10 +150,7 @@ p3 <- plot_ly(data=b,x=~publish_month,y=~outcome,name="outcomes",type="scatter",
   add_trace(y=~specialist,name="specialists") %>%
   add_trace(y=~training,name="training") %>%
   add_trace(y=~rfx,name="RFX") %>%
-<<<<<<< HEAD
   add_trace(y=~atm,name="ATM") %>%
-=======
->>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
     layout(title = "Percentage of briefs by type",
          xaxis = list(title=""),
          yaxis = list(title="percentage",range=c(0,100)),
@@ -169,10 +160,7 @@ p4 <- plot_ly(data=b,x=~publish_month,y=~outcome_total,name="outcomes",type="sca
   add_trace(y=~specialist_total,name="specialists") %>%
   add_trace(y=~training_total,name="training") %>%
   add_trace(y=~rfx_total,name="RFX") %>%
-<<<<<<< HEAD
   add_trace(y=~atm_total,name="ATM") %>%
-=======
->>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
   add_trace(y=~count,name="total") %>%
     layout(title = "Number of briefs by type",
          xaxis = list(title=""),
@@ -230,7 +218,6 @@ p7 <- plot_ly(data=b,x=~publish_month,y=~comm_ncce_total,name="Comm NCCE",type="
 ---  
 
 
-<<<<<<< HEAD
 # Contracts   
 
 ## Contract values  
@@ -331,9 +318,6 @@ p <- plot_ly(data=c_counts, x=~month, y=~count,
   
   
 
-=======
-# Contracts  
->>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
 ## Briefs vs Contracts  
 ```{r,echo=FALSE}
 b_ncce <- b_m %>%
@@ -370,7 +354,6 @@ p <- plot_ly(data=b_ncce,x=~publish_month,y=~count,
 ```  
 `r p`  
 
-<<<<<<< HEAD
 Only briefs published by non corporate commonwealth entities (NCCE) are shown, as these are the only agencies publishing contracts through Austender.  
   
 ## Marketplace panel vs other panels   
@@ -418,11 +401,6 @@ plot_ly() %>%
   )
 ```  
 
-=======
-Only briefs published by non corporate commonwealth entities are shown, as these are the only agencies publishing contracts through Austender.  
-  
-  
->>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
 
 ## Percentage of contracts to SMEs by month   
 <br />  
@@ -472,7 +450,6 @@ p9 <- plot_ly(data=by_value,x=~month,y=~cumulative_SME_perc,type="scatter",mode=
 <br />  
 `r p9`  
 
-<<<<<<< HEAD
 ## Contract values over time  
 
 Coming soon! 
@@ -488,9 +465,6 @@ Coming soon!
 #  add_trace(y =~ trend, mode = "lines") %>%
 #  layout(yaxis = list(type = "log"))
 ```
-=======
-## 
->>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
 ## Top buyers publishing  
 ## Top buyers by contracts published  
 ## New agencies this month  

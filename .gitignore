@@ -26,11 +26,7 @@ vignettes/*.pdf
 /data/
 /reports/
 # ignore Shiny in development
-<<<<<<< HEAD
 /shiny/
-=======
-/shiny/dev*
->>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
 # Temporary files created by R markdown
 *.utf8.md
 *.knit.md

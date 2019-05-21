@@ -8,11 +8,7 @@ output:
 params:
   seller: 
     label: seller
-<<<<<<< HEAD
     value: FutureTrain
-=======
-    value: dummy
->>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
     input: textInput
 ---
 
