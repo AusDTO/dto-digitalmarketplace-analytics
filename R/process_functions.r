@@ -222,6 +222,7 @@ process_sellers_and_applications <- function(s,a,u) {
 }
 
 # merge contracts and seller details
+<<<<<<< HEAD
 process_contracts <- function(contracts,sellers,exceptions) {
 
   total <- sum(contracts$Value)
@@ -231,6 +232,15 @@ process_contracts <- function(contracts,sellers,exceptions) {
   contracts <- contracts %>%
     left_join(s,by=c("Supplier.ABN" = "abn"))
   
+=======
+process_contracts <- function(contracts,sellers) {
+  c <- contracts
+  s <- sellers
+  contracts <- contracts %>%
+    ## quick hack... will need a better solution for sellers when they're deleted
+    mutate(Supplier.ABN = replace(Supplier.ABN, Supplier.ABN=="40257684711","34616970471")) %>%
+    left_join(s,by=c("Supplier.ABN" = "abn"))
+>>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
   attr(contracts,"timestamp") <- Sys.time()
 
   # check for duplicates  
@@ -326,6 +336,7 @@ process_agency_summary <- function(buyers,briefs,contracts,
 }
 
 
+<<<<<<< HEAD
 process_jira_tickets <- function(j_tickets) {
   jt <- j_tickets %>%
     filter(type != "Supplier Assessment Step") %>% # don't know what these are, but don't look useful
@@ -339,3 +350,5 @@ process_jira_tickets <- function(j_tickets) {
 }
 
 
+=======
+>>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8

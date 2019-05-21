@@ -1,6 +1,11 @@
 # configuration
+<<<<<<< HEAD
 prod_api_url <- Sys.getenv("prod_api_url")
 rc_api_url   <- Sys.getenv("rc_api_url")
+=======
+prod_api_url <- "https://dm-api.apps.b.cld.gov.au/api/"
+rc_api_url   <- "https://dm-rc.apps.y.cld.gov.au/api/"
+>>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
 
 domains <- c("Software engineering and Development",
              "User research and Design",
@@ -172,16 +177,23 @@ fetchAllFromAPI <- function(getURL,auth,x) {
 }
 
 # writes a data frame to a CSV file with label YYYYMMDD-suffix.csv
+<<<<<<< HEAD
 writey <- function(x,suffix,includeHeader=TRUE, quote=TRUE, sep=",", normalise = TRUE) {
+=======
+writey <- function(x,suffix,includeHeader=TRUE, quote=TRUE, sep=",") {
+>>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
   # 
   if (class(x)[1] == "character") {
     includeHeader = FALSE
   }
   
+<<<<<<< HEAD
   if (normalise) {
     x <- normalise_dataframe(x)
   }
   
+=======
+>>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
   write.table(x,file=paste(getwd(),rel_path_data(),substr(as.POSIXct(Sys.time()),1,10),"-",suffix,".csv",sep=""),
               sep=sep,quote=quote,row.names=FALSE,col.names=includeHeader)
 }
@@ -460,6 +472,7 @@ writeClip <- function(df) {
   lines <- apply(df,1,function(x) {paste(x,collapse = "\t")})
   writeClipboard(lines)
 }
+<<<<<<< HEAD
 
 # clear warnings
 clear_warnings <- function() {
@@ -480,3 +493,5 @@ session_numbers <- function() {
   sessions$month <- string_to_date(sessions$month)
   sessions
 }
+=======
+>>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8

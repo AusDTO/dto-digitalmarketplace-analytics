@@ -157,6 +157,7 @@ extract_sellers <- function(header,include_deleted = FALSE, cache = NULL) {
   }
    
   #sellers_query <- "https://dm-api.apps.platform.digital.gov.au/api/suppliers"
+<<<<<<< HEAD
   if (is.null(cache)) {
     sellers_query  <- prod_api("suppliers")
     sellers_raw    <- fetchAllFromAPI(sellers_query,header,list())
@@ -164,6 +165,11 @@ extract_sellers <- function(header,include_deleted = FALSE, cache = NULL) {
   } else {
     sellers_raw <- cache
   }
+=======
+  sellers_query  <- prod_api("suppliers")
+  sellers_raw    <- fetchAllFromAPI(sellers_query,header,list())
+  temp_save(sellers_raw,"Sellers")
+>>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
   case_studies   <- extract_case_studies(sellers_raw)
   seller_domains <- bind_rows(lapply(sellers_raw,extract_domains_table))
   sellers        <- bind_rows(lapply(sellers_raw,process_raw_sellers))
@@ -171,6 +177,7 @@ extract_sellers <- function(header,include_deleted = FALSE, cache = NULL) {
   attr(sellers,"timestamp") <- Sys.time()
   attr(seller_domains,"timestamp") <- Sys.time()
   attr(case_studies,"timestamp") <- Sys.time()
+<<<<<<< HEAD
 
   # temp fudge to remove seller 1574, which has a duplicate ABN
   sellers <- sellers %>% filter(code != 1574)
@@ -185,6 +192,8 @@ extract_sellers <- function(header,include_deleted = FALSE, cache = NULL) {
     stop("Duplicate sellers in the catalogue")
   }
 
+=======
+>>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
   return(list(sellers=sellers,case_studies=case_studies,seller_domains=seller_domains))
 }
 
@@ -195,7 +204,11 @@ extract_briefs  <- function(header, return_all = FALSE, cache = NULL) {
                         "specialistRole","areaOfExpertise","budgetRange","contractLength","publishedAt",
                         "createdAt","duration","close","frameworkFramework","lot","updatedAt",
                         "phase","essentials","nicetohaves","invitedSellerEmails","invitedSellerIDs")
+<<<<<<< HEAD
   briefPresentationFilter <- c("id","status","title","organisation","location","openTo",
+=======
+  briefPresentationFilter <- c("id","status","title","organisation","openTo",
+>>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
                                "type","specialistRole","areaOfExpertise","budgetRange","contractLength",
                                "created","published","close","duration","invitedSellerEmails",
                                "invitedSellerIDs", #"frameworkFramework",
@@ -233,6 +246,7 @@ extract_briefs  <- function(header, return_all = FALSE, cache = NULL) {
     } else {
       return(rep("",nrow(br)))
     }
+<<<<<<< HEAD
     
     # somehow the sellers column can be empty
     if (ncol(s) ==0) {
@@ -263,6 +277,38 @@ extract_briefs  <- function(header, return_all = FALSE, cache = NULL) {
       right_join(select(br,id),by="id") %>%
       replace_na(list(invited_sellers=""))
     
+=======
+    
+    # somehow the sellers column can be empty
+    if (ncol(s) ==0) {
+      return(rep("",nrow(br)))
+    }
+    
+    # if there's only 1 seller, the data structure is different...
+    if (ncol(s) == 1) {
+      seller_id  <- names(s)[1]
+      seller_ids <- apply(s,1,function(x) {x})
+      seller_ids[!is.na(seller_ids)] <- seller_id
+      seller_ids[is.na(seller_ids)]  <- ""
+      return(seller_ids)
+    }
+    
+    #matrix of sellers by brief
+    m     <- t(apply(s,1,function(x) {sapply(x,is.na)}))
+    s_ids <- attr(m,"dimnames")[[2]]
+    m     <- data.frame(m)
+    names(m) <- s_ids
+    se    <- m %>% 
+      mutate(id = br$id) %>%
+      gather(key="seller_id",value="invited",-id) %>%
+      mutate(invited = !invited) %>%
+      filter(invited) %>%
+      group_by(id) %>%
+      summarise(invited_sellers = paste(seller_id,collapse = "|")) %>%
+      right_join(select(br,id),by="id") %>%
+      replace_na(list(invited_sellers=""))
+    
+>>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
     return(se$invited_sellers)
   }
 
@@ -636,7 +682,10 @@ extract_seller_prices <- function(rs) {
 }
 
 
+<<<<<<< HEAD
 #-------------------------------------------------------------------------------------------
+=======
+>>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
 # just extracts basic details about domain assessment requests
 extract_assessments <- function(header) {
   
@@ -710,7 +759,10 @@ extract_austender <- function(sons = c("SON3413842","SON3364729")) {
   return(x)
 }
 
+<<<<<<< HEAD
 #-------------------------------------------------------------------------------------------
+=======
+>>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
 # extracts a list of panels from Austender - returns the list of all currently open panels
 extract_panel_listing <- function() {
   fetch_panels <- function() {
@@ -738,7 +790,10 @@ extract_panel_listing <- function() {
   return(df)
 }
 
+<<<<<<< HEAD
 #-------------------------------------------------------------------------------------------
+=======
+>>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
 # fetches a list of sellers for a given SON.ID from Austender
 extract_vendors_from_panel <- function(son) {
 
@@ -775,7 +830,10 @@ extract_vendors_from_panel <- function(son) {
   return(p_sellers)
 }
 
+<<<<<<< HEAD
 #-------------------------------------------------------------------------------------------
+=======
+>>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
 extract_sellers_from_panels <- function(sons) {
   fetch_individual_son <- function(son) {
     extract_vendors_from_panel(son) %>%
@@ -785,7 +843,10 @@ extract_sellers_from_panels <- function(sons) {
   bind_rows(lapply(sons,fetch_individual_son))
 }
 
+<<<<<<< HEAD
 #-------------------------------------------------------------------------------------------
+=======
+>>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
 extract_feedback <- function(header) {
   
   # function to de-duplicate the feedback

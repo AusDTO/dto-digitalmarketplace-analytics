@@ -2,9 +2,13 @@
 library(odbc)
 db_connect_local <- function() {
   con <- DBI::dbConnect(odbc::odbc(), Driver = "SQL Server", Server = "localhost\\SQLEXPRESS;Database=master;Trusted_Connection=True;", 
+<<<<<<< HEAD
                       UID = "sa", 
                       #PWD = rstudioapi::askForPassword("Database password"),
                       PWD = Sys.getenv("local_db_pwd"),
+=======
+                      UID = "sa", PWD = rstudioapi::askForPassword("Database password"), 
+>>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
                       Port = 1433)
   return(con)
 }
@@ -62,6 +66,7 @@ db_read_dmp_contracts <- function(con, latest = TRUE, target_date = "2018-12-31"
   return(c)
 }
 
+<<<<<<< HEAD
 # reads a summary of by day
 db_read_dmp_contracts_summary <- function(con) {
   read_query <- paste0(
@@ -78,6 +83,8 @@ db_read_dmp_contracts_summary <- function(con) {
   c %>% mutate(extract_date = as.Date(extract_date))
 }
 
+=======
+>>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
 # Appends the database with contracts extracted today
 db_append_dmp_contracts <- function(con,contracts) {
   
@@ -143,5 +150,8 @@ db_initialise_dmp_contracts <- function(con) {
 db_initialise_contract_notices <- function(con,cns) {
   dbWriteTable(con,db_contract_notice_export_table,cns)
 }
+<<<<<<< HEAD
 
 
+=======
+>>>>>>> 3b731893c393a03c37e1d31edf78981f67d83ac8
