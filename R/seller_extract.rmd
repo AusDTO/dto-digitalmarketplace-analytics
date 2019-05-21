@@ -8,27 +8,33 @@ output:
 params:
   seller: 
     label: seller
-    value: Cirrus
+    value: FutureTrain
     input: textInput
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = FALSE, include = FALSE}
 if (!exists("buyers")) {
-  source("../R/utilities.r")
-  source("../R/plotly_functions.r")
-  source("../R/assorted_functions.r")
   library(knitr)
-  library(tidyr)
+  library(tidyverse)
   library(RColorBrewer)
   library(dplyr)
   library(plotly)
   library(httr)
   library(stringr)
   library(kableExtra)
+  library(lubridate)
+  source("../R/utilities.r")
+  source("../R/plotly_functions.r")
+  source("../R/assorted_functions.r")
   ## load the files - ensure these files are already produced
   load(paste0(getwd(),rel_path_data(),substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
 }
+
+
 ```
   
 
@@ -67,10 +73,24 @@ Contracts won | `r nrow(c)`
 Total value | `r format_mil(sum(c$Value))`  
 Briefs responded to  | `r nrow(br)`  
 
+---   
   
----  
+  
+## Assessment History    
+  
 
-## Seller detail  
+```{r, echo = FALSE, include = FALSE}
+j_tickets <- update_jira_tickets()
+ticks <- j_tickets %>%
+  filter(seller_id == s_id) %>%
+  select(ticket_ids, seller_id, type, aoe, status, created, updated, resolution_date)
+```
+`r kables(ticks)`   
+  
+  
+
+
+## Seller detail   
   
 `r kables(s_summary)`  
 

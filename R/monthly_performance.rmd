@@ -14,9 +14,6 @@ always_allow_html: yes
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 if (!exists("buyers")) {
-  source("../R/utilities.r")
-  source("../R/plotly_functions.r")
-  source("../R/assorted_functions.r")
   library(knitr)
   library(tidyr)
   library(RColorBrewer)
@@ -26,13 +23,18 @@ if (!exists("buyers")) {
   library(stringr)
   library(kableExtra)
   library(lubridate)
+  source("../R/utilities.r")
+  source("../R/plotly_functions.r")
+  source("../R/assorted_functions.r")
+  source("../R/scrape_austender.r")
   ## load the files - ensure these files are already produced
   load(paste0(getwd(),rel_path_data(),substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
+  cns <- load_austender_cns()
 }
 
 month <- "month" # change to "week" to get a weekly report  
 
-current_month   <- floor_date(Sys.Date(),unit=month) # filter out events after this date as month
+current_month   <- floor_date(Sys.Date(),unit=month) +31 # filter out events after this date as month
 reporting_month <- floor_date(current_month-1,unit=month) # month in focus
 previous_month  <- floor_date(reporting_month-1,unit=month)
 reporting_month_name  <- as.character(month(reporting_month,label=TRUE,abbr=FALSE))
@@ -45,7 +47,10 @@ c_m    <- contracts %>%
 b_m    <- briefs %>% 
   mutate(publish_month = floor_date(published,unit=month),
          close_month   = floor_date(close,unit=month)) %>%
-  filter(published < current_month)
+  filter(published < current_month) # %>% 
+  #mutate(openTo = case_when(type == "ATM" ~ "All",
+  #                          TRUE          ~ openTo)) # ATMs are all open to all
+b_m[b_m$type == "ATM",]$openTo <- "All" # mutate doesn't like the factors, so back to base
 ```   
 
 ```{r,echo=FALSE}  
@@ -59,6 +64,8 @@ b <- b_m %>%
             specialist = sum(type == "Specialist")/n()*100,
             outcome    = sum(type == "Outcome")/n()*100,
             training   = sum(type == "Training")/n()*100,
+            rfx        = sum(type == "RFX")/n()*100,
+            atm        = sum(type == "ATM")/n()*100,
             comm_cce   = sum(entities == "CCE")/n()*100,
             local      = sum(entities == "Local")/n()*100,
             comm_ncce  = sum(entities == "NCCE")/n()*100,
@@ -70,6 +77,8 @@ b <- b_m %>%
             specialist_total = sum(type == "Specialist"),
             outcome_total    = sum(type == "Outcome"),
             training_total   = sum(type == "Training"),
+            rfx_total        = sum(type == "RFX"),
+            atm_total        = sum(type == "ATM"),
             comm_cce_total   = sum(entities == "CCE"),
             local_total      = sum(entities == "Local"),
             comm_ncce_total  = sum(entities == "NCCE"),
@@ -78,11 +87,7 @@ b <- b_m %>%
             )
 b_rep  <- b[which(b$publish_month==reporting_month),]
 b_prev <- b[which(b$publish_month==previous_month),]
-p <- plot_ly(data=b,x=~publish_month,y=~count,type="scatter",mode="lines+markers") %>%
-  layout(title = "Count of briefs published each month",
-         xaxis = list(title="month published"),
-         yaxis = list(title="briefs published",range=c(0,100)))
-```
+```  
 
 # Briefs   
 <br />
@@ -94,6 +99,19 @@ p <- plot_ly(data=b,x=~publish_month,y=~count,type="scatter",mode="lines+markers
 
 ## Number of briefs published  
 <br />  
+```{r,echo=FALSE}
+b_lo <- b %>% 
+  mutate(month = seq_along(publish_month)) %>%
+  loess(count ~ month,data=.,span=0.4)
+b$smoothed <- b_lo$fitted
+
+p <- plot_ly(data=b,x=~publish_month,y=~count,type="scatter",mode="lines+markers",name="briefs") %>%
+  add_trace(y=~smoothed,name="briefs trend") %>%
+  layout(title = "Count of briefs published each month",
+         xaxis = list(title="month published"),
+         yaxis = list(title="briefs published",range=c(0,max(b$count))))
+#p
+```
 `r p`  
   
   
@@ -121,6 +139,7 @@ p2 <- plot_ly(data=b,x=~publish_month,y=~all_total,name="all",type="scatter",mod
 ```
   
 `r p1`  
+<br />  
 `r p2`  
 
 ## Split of briefs by type  
@@ -130,6 +149,8 @@ p2 <- plot_ly(data=b,x=~publish_month,y=~all_total,name="all",type="scatter",mod
 p3 <- plot_ly(data=b,x=~publish_month,y=~outcome,name="outcomes",type="scatter",mode="lines+markers") %>%
   add_trace(y=~specialist,name="specialists") %>%
   add_trace(y=~training,name="training") %>%
+  add_trace(y=~rfx,name="RFX") %>%
+  add_trace(y=~atm,name="ATM") %>%
     layout(title = "Percentage of briefs by type",
          xaxis = list(title=""),
          yaxis = list(title="percentage",range=c(0,100)),
@@ -138,6 +159,8 @@ p3 <- plot_ly(data=b,x=~publish_month,y=~outcome,name="outcomes",type="scatter",
 p4 <- plot_ly(data=b,x=~publish_month,y=~outcome_total,name="outcomes",type="scatter",mode="lines+markers") %>%
   add_trace(y=~specialist_total,name="specialists") %>%
   add_trace(y=~training_total,name="training") %>%
+  add_trace(y=~rfx_total,name="RFX") %>%
+  add_trace(y=~atm_total,name="ATM") %>%
   add_trace(y=~count,name="total") %>%
     layout(title = "Number of briefs by type",
          xaxis = list(title=""),
@@ -147,6 +170,7 @@ p4 <- plot_ly(data=b,x=~publish_month,y=~outcome_total,name="outcomes",type="sca
 ```
 
 `r p3`  
+<br />  
 `r p4`   
 
 # Buyers  
@@ -188,8 +212,259 @@ p7 <- plot_ly(data=b,x=~publish_month,y=~comm_ncce_total,name="Comm NCCE",type="
 
 ```  
 `r p6`  
+<br />  
 `r p7`  
 
+---  
+
+
+# Contracts   
+
+## Contract values  
+<br />  
+```{r, echo = FALSE}
+c_files <- list.files(paste0(getwd(),rel_path_data())) %>% 
+  as.tibble() %>% 
+  filter(str_detect(value,"\\-[Cc]ontracts\\.+csv"))
+
+c_files$date  <- as.Date(str_match(c_files$value,"\\d{4}\\-\\d{2}\\-\\d{2}")[,1])
+c_files$month <- floor_date(c_files$date,unit="month")
+c_files$total <- 0
+c_files$val_in_month <- 0
+c_files <- c_files %>% filter(month > as.Date("2017-10-01"))
+
+for(i in seq_along(c_files$value)) {
+  #print(c_files[i,]$value)
+  c_         <- read.csv(file=paste0(getwd(),rel_path_data(),c_files[i,"value"]))
+  c_$month   <- floor_date(as.Date(c_$Publish.Date),unit="month") 
+  last_month <- floor_date(c_files[i,]$month - 1,unit="month")
+  c_files[i,"total"] <- sum(c_$Value)
+  c_       <- c_ %>% filter(month == last_month)
+  c_files[i,"val_in_month"] <- sum(c_$Value)
+}
+
+c_summ <- c_files %>% 
+  group_by(month) %>% 
+  summarise(value_at_som = min(total),val_in_month = max(val_in_month))
+
+c_summ$difference   <- c(3180000,diff(c_summ$value_at_som))
+x <- nrow(c_summ) - 1
+#c_summ$val_in_month   <- c(0,c_summ$val_in_month[1:x])
+c_summ$variations     <- c_summ$difference - c_summ$val_in_month
+
+
+c_summ$month <- c_summ$month - 1
+
+p <- plot_ly(data=c_summ,x=~month, y=~difference,
+        name="Value for the month",
+        type="scatter",
+        mode="lines+markers") %>%
+  add_trace(y=~val_in_month,name="New contracts") %>%
+  add_trace(y=~variations,name="Variations to old contracts") %>%
+  layout(title="Contract values reported each month",
+         yaxis=list(title="Value ($M)"))
+
+```  
+`r p`  
+  
+## Contract volumes  
+<br />  
+
+```{r, echo = FALSE}
+c_counts <- c_m %>%
+  group_by(month) %>%
+  summarise(count = n())
+
+c_files <- list.files(paste0(getwd(),rel_path_data())) %>% 
+  as.tibble() %>% 
+  filter(str_detect(value,"\\-[Cc]ontracts\\.+csv"))
+
+c_files$date  <- as.Date(str_match(c_files$value,"\\d{4}\\-\\d{2}\\-\\d{2}")[,1])
+c_files$month <- floor_date(c_files$date,unit="month")
+c_files$total <- 0
+c_files$val_in_month <- 0
+c_files <- c_files %>% filter(month > as.Date("2017-10-01"))
+
+for(i in seq_along(c_files$value)) {
+  #print(c_files[i,]$value)
+  c_         <- read.csv(file=paste0(getwd(),rel_path_data(),c_files[i,"value"]))
+  c_$month   <- floor_date(as.Date(c_$Publish.Date),unit="month") 
+  last_month <- floor_date(c_files[i,]$month - 1,unit="month")
+  c_files[i,"total"] <- sum(c_$Value)
+  c_       <- c_ %>% filter(month == last_month)
+  c_files[i,"val_in_month"] <- sum(c_$Value)
+}
+
+c_summ <- c_files %>% 
+  group_by(month) %>% 
+  summarise(value_at_som = min(total),val_in_month = max(val_in_month))
+
+c_summ$difference   <- c(3180000,diff(c_summ$value_at_som))
+x <- nrow(c_summ) - 1
+#c_summ$val_in_month   <- c(0,c_summ$val_in_month[1:x])
+c_summ$variations     <- c_summ$difference - c_summ$val_in_month
+
+
+c_summ$month <- c_summ$month - 1
+
+p <- plot_ly(data=c_counts, x=~month, y=~count,
+        type="scatter",
+        mode="lines+markers") %>%
+  layout(title="Contracts reported by month",
+         yaxis=list(title="count"))
+
+```  
+`r p`  
+  
+  
+
+## Briefs vs Contracts  
+```{r,echo=FALSE}
+b_ncce <- b_m %>%
+  filter(entities == "NCCE") %>%
+  group_by(publish_month) %>%
+  summarise(count = n())
+
+b_lo <- b_ncce %>% 
+  mutate(month = seq_along(publish_month)) %>%
+  loess(count ~ month,data=.,span=0.4)
+b_ncce$smoothed <- b_lo$fitted
+
+c_summary <- c_m %>% 
+  group_by(month) %>%
+  summarise(count=n()) %>%
+  ungroup() %>%
+  mutate(month_seq = seq_along(month))
+
+c_smooth <- c_summary %>%  
+  loess(count ~ month_seq,data=.,span=0.4)
+
+c_summary$smoothed <- c_smooth$fitted
+
+p <- plot_ly(data=b_ncce,x=~publish_month,y=~count,
+             type="scatter",mode="lines+markers",name="briefs",
+             opacity=0.4) %>%
+  add_trace(y=~smoothed,name="briefs trend",opacity=1.0) %>%
+  add_trace(x=c_summary$month,y=c_summary$count,name="contracts",opacity=0.4) %>%
+  add_trace(x=c_summary$month,y=c_summary$smoothed,name="contracts trend",opacity=1.0) %>%
+  layout(title = "Count of briefs and contracts published each month",
+         xaxis = list(title="month published"),
+         yaxis = list(title="briefs published",range=c(0,max(c_summary$count))))
+
+```  
+`r p`  
+
+Only briefs published by non corporate commonwealth entities (NCCE) are shown, as these are the only agencies publishing contracts through Austender.  
+  
+## Marketplace panel vs other panels   
+```{r,echo=FALSE}
+panels_by_month <- filter_cns_to_latest_amendment(cns) %>%
+  filter(str_detect(SON.ID,"SON")) %>% 
+  select(CN.ID,SON.ID,Publish.Date,month,Value) %>%
+  mutate(dmp_panel = SON.ID %in% dmp_sons) %>%
+  group_by(month,dmp_panel) %>%
+  summarise(count = n(),
+            value = sum(Value))
+
+panels_by_count <- panels_by_month %>%
+  select(-value) %>%
+  spread(key = dmp_panel, value = count, fill = 0) %>%
+  rename(dmp = `TRUE`, all_sons = `FALSE`) %>%
+  ungroup()
+
+panels_by_count$dmp_smoothed <- loess(dmp ~ seq_along(month),
+                                      data = panels_by_count,
+                                      span = 0.4)$fitted
+panels_by_count$all_sons_smoothed <- loess(all_sons ~ seq_along(month),
+                                           data = panels_by_count,
+                                           span = 0.4)$fitted
+
+ay <- list(
+  #tickfont = list(color = "red"),
+  overlaying = "y",
+  side = "right",
+  title = "Count of all panel contracts"
+)
+colours = c("light blue", "blue", "light red", "red")
+plot_ly() %>%
+  add_lines(x =~ month, y =~ dmp, data = panels_by_count, name = "DMP",opacity = 0.4) %>%
+  add_lines(x = panels_by_count$month, y = panels_by_count$dmp_smoothed, 
+            name = "DMP smoothed", opacity = 1.0) %>%
+  add_lines(x =~ month, y =~ all_sons, name = "All SONs", 
+            yaxis = "y2", opacity = 0.4) %>%
+  add_lines(x =~ month, y =~ all_sons_smoothed, name = "All SONS smoothed", 
+            yaxis = "y2", opacity = 1.0) %>%
+  layout(
+    title = "DMP contracts versus all other panels", yaxis2 = ay,
+    xaxis = list(title="month"),
+    yaxis = list(title="count of dmp contracts")
+  )
+```  
+
+
+## Percentage of contracts to SMEs by month   
+<br />  
+```{r,echo=FALSE}
+c_cum <- c_m %>% 
+  arrange(Publish.Date) %>%
+  mutate(month = floor_date(Publish.Date,unit="month")) %>%
+  group_by(month,sme_by_employees) %>%
+  summarise(
+    count = n(),
+    value = sum(Value)
+  ) %>%
+  mutate(seller_type = case_when(
+    sme_by_employees == TRUE ~ "SME",
+    TRUE ~ "Enterprise"
+  )) %>%
+  ungroup() %>%
+  select(-sme_by_employees)
+
+by_count <- c_cum %>%
+  select(-value) %>%
+  spread(seller_type,count,fill=0) %>% 
+  mutate(net_SME = cumsum(SME),
+         net_Ent = cumsum(Enterprise),
+         cumulative_SME_perc = net_SME/(net_SME+net_Ent)*100,
+         monthly_SME_perc = SME /(SME+Enterprise)*100)
+
+p8 <- plot_ly(data=by_count,x=~month,y=~cumulative_SME_perc,type="scatter",mode="lines+markers",name="Cumulative") %>%
+  add_trace(y=~monthly_SME_perc,name="Monthly") %>%
+  layout(title="Percentage of contracts awarded to SMEs",
+         yaxis = list(title="Percentage of contracts awarded to SME"))
+
+by_value <- c_cum %>%
+  select(-count) %>%
+  spread(seller_type,value,fill=0) %>% 
+  mutate(net_SME = cumsum(SME),
+         net_Ent = cumsum(Enterprise),
+         cumulative_SME_perc = net_SME/(net_SME+net_Ent)*100,
+         monthly_SME_perc = SME /(SME+Enterprise)*100)
+
+p9 <- plot_ly(data=by_value,x=~month,y=~cumulative_SME_perc,type="scatter",mode="lines+markers",name="Cumulative") %>%
+  add_trace(y=~monthly_SME_perc,name="Monthly") %>%
+  layout(title="Percentage of contract value awarded to SMEs",
+         yaxis = list(title="Percentage of contract value awarded to SME"))
+```  
+`r p8`  
+<br />  
+`r p9`  
+
+## Contract values over time  
+
+Coming soon! 
+
+```{r, echo = FALSE}
+#c <- contracts %>% 
+#  arrange(Publish.Date) %>%
+#  select(Value, Publish.Date)
+
+#c$trend <- loess(Value ~ seq_along(c$Publish.Date), data = c, span = 0.5)$fitted
+
+#plot_ly(data = c, x =~ Publish.Date, y =~ Value, type = "scatter", mode = "markers") %>%
+#  add_trace(y =~ trend, mode = "lines") %>%
+#  layout(yaxis = list(type = "log"))
+```
 ## Top buyers publishing  
 ## Top buyers by contracts published  
 ## New agencies this month  

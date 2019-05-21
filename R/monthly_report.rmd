@@ -118,7 +118,16 @@ plot_ly(x,labels=~openTo, values=~count,
   
 ## Types of briefs published    
 ```{r,echo=FALSE}
-x <- briefs %>% group_by(type) %>% summarise(count = length(type))
+x <- briefs %>% 
+  mutate(type = as.character(type)) %>%
+  #mutate(type = case_when(
+  #                type == "Outcome" & openTo == "All" ~ "ATM",
+  #                type == "Outcome"                   ~ "RFX",
+  #                TRUE                                ~ type
+  #              )
+  #       ) %>%
+  group_by(type) %>% 
+  summarise(count = length(type))
 plot_ly(x,labels=~type, values=~count,
           textposition = 'outside',
           textinfo = 'label+percent+value',
@@ -288,7 +297,7 @@ Number of briefs with phase not set: `r NAs` - these are not counted above
   
 ## Trend for day rates  
 ```{r,echo=FALSE}
-br <- briefResponses %>% filter(applicationDate <= end)
+br <- briefResponses %>% filter(applicationDate <= end, areaOfExpertise != "Change  Training and Transformation")
 plot_violins_of_day_rates(br)
 ```  
 
@@ -403,31 +412,36 @@ Outcomes | `r paste(paste(summary(outcomes$responses),collapse = " | "),"  ")`
 # Who is winning the work?  
 
 ```{r,echo=FALSE}
-m_c <- contracts %>%
-  filter(Publish.Date <= end, Publish.Date >= fy_start)
-fy_contracts <- m_c %>%
-  group_by(Supplier.ABN) %>%
-  summarise(value = sum(Value),count=length(Supplier.ABN))
-fy_contracts <- merge(fy_contracts,sellers[,c("abn","name","sme_by_employees")],
-                      by.x="Supplier.ABN",by.y="abn",all.x=TRUE) %>%
+fy_contracts <- contracts %>%
+  filter(Publish.Date <= end, Publish.Date >= fy_start) %>%
+  group_by(Supplier.ABN,name,sme_by_employees) %>%
+  summarise(value = sum(Value),
+            count = n()) %>%
   arrange(desc(count),desc(value))
+
+#fy_contracts <- m_c %>%
+#  group_by(Supplier.ABN) %>%
+#  summarise(value = sum(Value),count=length(Supplier.ABN))
+#fy_contracts <- merge(fy_contracts,sellers[,c("abn","name","sme_by_employees")],
+#                      by.x="Supplier.ABN",by.y="abn",all.x=TRUE) %>%
+#  arrange(desc(count),desc(value))
 fy_others <- fy_contracts[11:dim(fy_contracts)[1],] %>%
   group_by(sme_by_employees) %>%
   summarise(value = sum(value),count = sum(count)) %>%
   mutate(name=c("Others-Enterprise","Others-SME"))
-fy_all <- bind_rows(fy_contracts[1:10,],fy_others)
-plot_ly(fy_all,
-        labels=~name,
-        rotation="35",
-        values=~count,
-        type="pie",
-        textinfo = 'label+value',
-        textposition = 'outside',
-        sort=FALSE,
-        direction="clockwise"
+#fy_all <- bind_rows(fy_contracts[1:10,],fy_others)
+#plot_ly(fy_all,
+#        labels=~name,
+#        rotation="35",
+#        values=~count,
+#        type="pie",
+#        textinfo = 'label+value',
+#        textposition = 'outside',
+#        sort=FALSE,
+#        direction="clockwise"
         #marker = list(
         #  colors= colours)
-        ) %>% layout(showlegend=F)
+#        ) %>% layout(showlegend=F)
 ```
   
 ### Current financial year  

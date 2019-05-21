@@ -1,5 +1,6 @@
 # configuration
-prod_api_url <- "https://dm-api.apps.b.cld.gov.au/api/"
+prod_api_url <- Sys.getenv("prod_api_url")
+rc_api_url   <- Sys.getenv("rc_api_url")
 
 domains <- c("Software engineering and Development",
              "User research and Design",
@@ -14,9 +15,22 @@ domains <- c("Software engineering and Development",
              "Marketing, Communications and Engagement",
              "Change and Transformation",
              "Training, Learning and Development")
+thresholds <- tibble(aoe=domains,
+                     aoe_max_price = c(1760,1906,1767,1472,2491,2200,1384,1894,1925,2068,2420,2420))
 domains_regex <- x <- paste0("(",
                              paste(domains,collapse =")|(")
                              ,")|(Change, Training and Transformation)")
+
+frequent_roles <- tibble(
+                    search = c("agile coach","business analyst","content designer","data analyst","delivery manager",
+                             "interaction designer","project manager","scrum master",
+                             "service design","service designer","service designers",
+                              "solution architect","user research"),
+                    role_name = c("Agile Coach","Business Analyst","Content Designer","Data Analyst","Delivery Manager",
+                              "Interaction Designer","Project Manager","Scrum Master",
+                              "Service Designer","Service Designer","Service Designer",
+                              "Solution Architect","User Research")
+                  )
 
 log_filename     <- "MKT_reporting_log.csv"
 # this can vary if scripts are run from different directories - especially likely for RMD
@@ -39,14 +53,32 @@ prod_api <- function(name) {
 }
 
 # User input to prompt for the authorisation token.
-# if a token is already set, then it's simple returneda
-prompt_auth <- function() {
-  line <- readline(prompt="Auth auth key: Bearer ")
-  return(paste("Bearer",line))
+# if a token is already set, then it's simple returned
+# DEPRECATED - using keyring now
+#prompt_auth <- function() {
+#  line <- readline(prompt="Auth auth key: Bearer ")
+#  return(paste("Bearer",line))
+#}
+
+#auth <- function(header) {
+#  return(header)
+#}
+
+# fetch the 'header' ie the auth token 
+header <- function() {
+  return(paste("Bearer",key_get("dmp_api", keyring = "mkt")))
 }
 
-auth <- function(header) {
-  return(header)
+# setup keyring values
+# Call when installing project on a new device
+setup_keyring <- function() {
+  keyring_create("mkt") 
+  key_set("dmp_api", keyring = "mkt")
+  key_set("jira", keyring = "mkt")
+  key_set("jira-login", keyring = "mkt")
+  key_set("slack-support-webhook", keyring = "mkt")
+  key_set("slack-marketplace-webhook", keyring = "mkt")
+  key_set("slack-dmp-team-webhook", keyring = "mkt")
 }
 
 # creates a data frame with each day, week or month since launch 
@@ -56,12 +88,33 @@ datesSinceLaunch <- function(unit="day") {
     mutate(dates = floor_date(dates,unit))
 }
 
+# Slack notifications to the #marketplace-support channel
+send_slack_notification_support <- function(message) {
+  POST(url = key_get("slack-support-webhook",keyring="mkt"),
+       body = paste0('{"text":"',message,'"}'),
+       encode = "json")
+}
+
+# Slack notifications to the #marketplace channel
+send_slack_notification_marketplace <- function(message) {
+  POST(url = key_get("slack-marketplace-webhook",keyring="mkt"),
+       body = paste0('{"text":"',message,'"}'),
+       encode = "json")
+}
+
+# Slack notifications to the #marketplace channel
+send_slack_notification_marketplace_team <- function(message) {
+  POST(url = key_get("slack-dmp-team-webhook",keyring="mkt"),
+       body = paste0('{"text":"',message,'"}'),
+       encode = "json")
+}
+
 # API interface functions
 
 # gets content from an API
 fetchFromAPI <- function(getURL,auth,returnRaw=FALSE) {
   getdata<-GET(url=getURL, add_headers(Authorization=auth))
-  raw <- fromJSON(content(getdata,type="text"))
+  raw <- fromJSON(content(getdata,type="text",encoding="UTF-8"))
   # Assume return is a list of 2 length. One of these is content, the other has links
   # just want the one with content, so reject the one that contains raw[[]]$self
   if (returnRaw) {
@@ -119,7 +172,16 @@ fetchAllFromAPI <- function(getURL,auth,x) {
 }
 
 # writes a data frame to a CSV file with label YYYYMMDD-suffix.csv
-writey <- function(x,suffix,includeHeader=TRUE, quote=TRUE, sep=",") {
+writey <- function(x,suffix,includeHeader=TRUE, quote=TRUE, sep=",", normalise = TRUE) {
+  # 
+  if (class(x)[1] == "character") {
+    includeHeader = FALSE
+  }
+  
+  if (normalise) {
+    x <- normalise_dataframe(x)
+  }
+  
   write.table(x,file=paste(getwd(),rel_path_data(),substr(as.POSIXct(Sys.time()),1,10),"-",suffix,".csv",sep=""),
               sep=sep,quote=quote,row.names=FALSE,col.names=includeHeader)
 }
@@ -226,6 +288,11 @@ string_to_date <- function(string, format="%d/%m/%Y") {
   as.Date(string, format) 
 }
 
+# convenience function to display the current date in dd MMM YYYY format
+today <- function() {
+  date_to_string(Sys.Date(), format = "%d %b %Y")
+}
+
 fill_logicals <- function(df) {
   cols <- sapply(df,class)=="logical"
   df[,cols] <- apply(df[,cols],c(1,2),function(x) {if(is.na(x)) {return(FALSE)}else{return(x)}})
@@ -260,9 +327,15 @@ translate_specialist_role <- function(vec) {
   translate(roles,domains,vec)
 }
 
+# translate the domain codes used in briefs in the "sellerCategory" field 
+translate_domain_code <- function(vec) {
+  codes <- as.character(c(6,3,4,7,1,8,10,11,13,9,14,15))
+  translate(codes,domains,vec)
+}
+
 translate_type <- function(v) {
-  types <- c("digital-outcome","digital-professionals","training","rfx")
-  t_types <- c("Outcome","Specialist","Training","RFX")
+  types <- c("digital-outcome","digital-professionals","training","rfx","atm")
+  t_types <- c("Outcome","Specialist","Training","RFX","ATM")
   translate(types,t_types,v)
 }
 
@@ -275,9 +348,11 @@ translate_open_to <- function(v) {
 translate_state_names <- function(v) {
   from <- c("QLD","NSW","Vic","ACT","SA","WA","Tas","NT",
             "Queensland","New South Wales","Victoria","Australian Capital Territory",
-            "South Australia","Western Australia","West Australia","Tasmania","Northern Territory")
+            "South Australia","Western Australia","West Australia","Tasmania","Northern Territory",
+            "VIC")
   to   <- c("QLD","NSW","Vic","ACT","SA","WA","Tas","NT",
-            "QLD","NSW","Vic","ACT","SA","WA","WA","Tas","NT")
+            "QLD","NSW","Vic","ACT","SA","WA","WA","Tas","NT", "Vic")
+  # compare <- data.frame(from = from, to = to)
   translate(from,to,v)
 }
 
@@ -371,4 +446,37 @@ cleanup_df_names <- function(df) {
   n <- gsub("\\s+","_",n)
   names(df) <- n
   return(df)
+}
+
+# convenience function for pasting a tab delimited file into R
+readClip <- function(header=T,delimiter="\t") {
+  read.table("clipboard",header = header,sep = delimiter,stringsAsFactors = F)
+}
+
+# writes a data frame to the clipboard
+# Collapses the dataframe into a tab delimited format, which can be pasted straight into Excel
+# WARNING - it's a bit primitive at the moment. Won't work so will if there are embedded tabs
+writeClip <- function(df) {
+  lines <- apply(df,1,function(x) {paste(x,collapse = "\t")})
+  writeClipboard(lines)
+}
+
+# clear warnings
+clear_warnings <- function() {
+  assign("last.warning", NULL, envir = baseenv())
+}
+
+# cleanup any columns of type character to replace quotation marks as they can cause issues with csv files
+normalise_dataframe <- function(df) {
+  char_columns <- which(sapply(df, class) == "character")
+  for (i in char_columns) {
+    df[,i] <- str_replace_all(df[,i],'"', "'")
+  } 
+  df
+}
+
+session_numbers <- function() {
+  sessions <- read.csv(paste0(getwd(),rel_path_data(),"session_numbers.csv"))
+  sessions$month <- string_to_date(sessions$month)
+  sessions
 }

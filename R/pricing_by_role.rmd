@@ -1,0 +1,113 @@
+---
+title: "Prices for specialists for common roles"
+output:
+  html_document:
+    theme: journal
+    toc: true
+    toc_float: true
+    df_print: paged
+  pdf_document: default
+  word_document: default
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)  
+```  
+```{r, echo = FALSE, include = FALSE}
+if (!exists("buyers")) {
+  library(knitr)
+  library(tidyr)
+  library(RColorBrewer)
+  library(dplyr)
+  library(plotly)
+  library(httr)
+  library(stringr)
+  library(kableExtra)
+  library(lubridate)
+  source("../R/utilities.r")
+  source("../R/plotly_functions.r")
+  source("../R/assorted_functions.r")
+  source("../R/scrape_austender.r")
+  ## load the files - ensure these files are already produced
+  load(paste0(getwd(),rel_path_data(),substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
+  #cns <- load_austender_cns()
+}
+
+```
+
+Date generated: `r today()` 
+  
+
+# Summary figures  
+
+Summary of the day rates offered by sellers responding to briefs with these role names. All day rates include GST.    
+
+```{r, echo = FALSE}
+
+summarise_role_responses <- function(br, role_name) {
+  summ_figures <- br %>%
+    filter(!is.na(dayRate)) %>%
+    summarise(
+      Role  = role_name,
+      Briefs = length(unique(id)),
+      Responses = n(),
+      #Min   = min(dayRate),
+      `5%`  = quantile(dayRate, probs = 0.05),
+      `25%`  = quantile(dayRate, probs = 0.25),
+      Median  = median(dayRate),
+      Average = mean(dayRate),
+      `75%`  = quantile(dayRate, probs = 0.75),
+      `95%`  = quantile(dayRate, probs = 0.95)
+      #Max  = max(dayRate)
+    )
+  summ_figures[,2:9] <- round(summ_figures[,2:9],0)
+  summ_figures
+} 
+
+b <- briefs %>%
+    filter(type == "Specialist", status == "closed") 
+
+summary_briefs <- tibble(id = integer(0), title = character(0), role = character(0))
+summary_figures <- list(nrow(frequent_roles))
+all_brs         <- list(nrow(frequent_roles))
+
+for (i in 1:nrow(frequent_roles)) {
+  #print(frequent_roles$role_name[i])
+  # identify briefs - using an edit distance approach - adist() to manage minor variations, eg spelling
+  edit_dist <- data.frame(
+                drop(
+                  attr(
+                    adist(frequent_roles$role_name[i], b$title, counts = TRUE, partial = TRUE, ignore.case = TRUE), 
+                    "counts"
+                    )
+                  )
+                ) %>%
+    mutate(net = ins + del + sub,
+           id  = b$id,
+           title = b$title,
+           role  = frequent_roles$role_name[i]) %>%
+    filter(net <= 2)
+
+  summary_briefs <- bind_rows(summary_briefs,edit_dist[,5:7])
+    
+  br <- briefResponses %>%
+    filter(id %in% edit_dist$id) %>%
+    mutate(areaOfExpertise = frequent_roles$role_name[i])
+  
+  all_brs[[i]] <- br
+  
+  summary_figures[[i]] <- summarise_role_responses(br, frequent_roles$role_name[i])
+}
+
+summary_figures <- bind_rows(summary_figures[2:length(summary_figures)])
+all_brs         <- bind_rows(all_brs)
+```
+`r kables(summary_figures)`  
+  
+# Violin plots  
+
+`r plot_violins_of_day_rates(all_brs)`  
+
+# Roles and matching briefs  
+`r kables(summary_briefs %>% select(role, id, title))`  

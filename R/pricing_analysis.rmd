@@ -12,17 +12,19 @@ always_allow_html: yes
 knitr::opts_chunk$set(echo = TRUE)
 # if rendered in a new R session, load the session values
 if (!exists("buyers")) {
-  source("R\\utilities.r")
-  source("R\\plotly_functions.r")
-  source("R\\assorted_functions.r")
   library(knitr)
-  library(tidyr)
+  library(tidyverse)
   library(RColorBrewer)
   library(dplyr)
   library(plotly)
   library(stringr)
+  library(lubridate)
+  library(kableExtra)
+  source("R\\utilities.r")
+  source("R\\plotly_functions.r")
+  source("R\\assorted_functions.r")
   ## load the files - ensure these files are already produced
-  load(paste0(getwd(),rel_path_data,substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
+  load(paste0(getwd(),rel_path_data(),substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
 }
 
 #reference data
@@ -31,9 +33,9 @@ thresholds = tibble(
     "Agile delivery and Governance"    ,        "Software engineering and Development",    
     "User research and Design"          ,       "Change and Transformation"            ,   
     "Cyber security"                     ,      "Strategy and Policy"                   ,  
-    "Marketing, Communications and Engagement", "Data science"                           , 
+    "Marketing  Communications and Engagement", "Data science"                           , 
     "Emerging technologies" ,                   "Content and Publishing"                  ,
-    "Support and Operations" ,                  "Training, Learning and Development"      ),
+    "Support and Operations" ,                  "Training  Learning and Development"      ),
   maxprice = c(
     1767, 1760,
     1906, 2420,
@@ -44,7 +46,59 @@ thresholds = tibble(
   )
 )
 ```
-# Pricing progress
+ 
+
+ 
+
+```{r, echo=FALSE, warning = FALSE}
+end_date   <- floor_date(Sys.Date(), unit = "month")
+start_date <- end_date
+year(start_date) <- year(start_date) - 1
+
+#start_date <- as.Date("2017-04-01")
+#end_date <- as.Date("2018-04-01")
+
+
+br <- briefResponses %>% 
+  filter(applicationDate >= start_date,
+         applicationDate < end_date,
+         type == "Specialist",
+         dayRate <= 10000,
+         areaOfExpertise != "Change  Training and Transformation")
+  
+br_summ <- br %>% 
+  group_by(areaOfExpertise) %>% 
+  summarise(count = n(),
+            #`1%`  = quantile(dayRate,0.01),
+            #`5%`  = quantile(dayRate,0.05),
+            `25%`  = quantile(dayRate,0.25),
+            median  = median(dayRate),
+            mean    = mean(dayRate),
+            `75%`  = quantile(dayRate,0.75),
+            `95%`  = quantile(dayRate,0.95)
+            ) %>% 
+  left_join(thresholds, by = c("areaOfExpertise" = "aoe"))
+  
+
+  
+```
+# Specialist pricing over the past 12 months  
+All figures are based on the day rates submitted for Specialist briefs between `r start_date` and `r (end_date - 1)` inclusive. Responses over $10,000 have been removed.  
+
+## Summary figures for the past 12 months  
+
+`r kables(br_summ) `  
+  
+## Spread of day rates  
+`r plot_violins_of_day_rates(br)`  
+
+
+# Progress figures from the original implementation  
+ 
+
+
+
+## Pricing progress
 ```{r echo=FALSE}
 
 # Note there are many 'prices' without matching domain, or entered by recruiters - so this is not entirely accurate

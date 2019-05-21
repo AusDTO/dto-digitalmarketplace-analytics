@@ -38,6 +38,59 @@ plot_buyer_counts <- function(b,publish=FALSE) {
   #return(counts)
 }
 
+# alternate version - 
+# don't show the total buyers
+# weekly resolution
+# 
+plot_buyer_counts_2 <- function(buyers) {
+  buy <- buyers %>%
+    mutate(week_joined   = floor_date(created_at, unit="week"),
+           inactive_date = floor_date(
+                              case_when(
+                                is.na(logged_in_at) ~ week_joined + 90,
+                                TRUE                ~ logged_in_at + 90
+                              ),
+                              unit = "week"
+                            )
+    )
+  
+  buy_summ <- buy %>%
+    group_by(week_joined) %>%
+    summarise(count = n())
+  
+  buy_summ$active_buyers <- sapply(buy_summ$week_joined,
+                              function(x,b) {
+                                  sum(b$week_joined <= x) - sum((b$inactive_date) < x)
+                              }, 
+                              b=buy)
+  
+  agencies <- buy %>%
+    group_by(email_domain) %>%
+    summarise(joined        = min(created_at),
+              inactive      = max(inactive_date)) %>%
+    ungroup()
+  
+  agency_summ <- agencies %>%
+    group_by(joined) %>%
+    summarise(count = n())
+  
+  agency_summ$active_agencies <- sapply(agency_summ$joined,
+                                        function(x,b) {
+                                          sum(b$joined <= x) - sum(b$inactive < x)
+                                        },
+                                        b=agencies)
+  
+  plot_ly(buy_summ,x = ~week_joined, y = ~active_buyers, name = "Active buyers",
+          type='scatter',mode='lines') %>%
+    add_trace(x = agency_summ$joined, y = agency_summ$active_agencies, name = "Active agencies") %>%
+    layout(title = 'Active buyers and agencies',
+           xaxis = list(title = "",
+                        showgrid = TRUE),
+           yaxis = list(title = "",
+                        showgrid = TRUE))
+  #return(counts)
+}
+
 plot_stacked_agency_counts <- function(b,publish=FALSE) {
   counts <- data.frame("dates" = datesSinceLaunch())
   names(counts) <- c("dates")
@@ -148,8 +201,9 @@ plot_violins_of_day_rates <- function(bR) {
     summarise(number_of_briefs = length(unique(id)), 
               number_of_responses = length(applicationId))
   
-  areas <- data.frame(areaOfExpertise=unique(vals$areaOfExpertise))
-  doms  <- data.frame(areaOfExpertise= domains)
+  areas <- data.frame(areaOfExpertise = unique(vals$areaOfExpertise))
+  #doms  <- data.frame(areaOfExpertise= domains)
+  doms  <- data.frame(areaOfExpertise = unique(vals$areaOfExpertise))
   resps <- merge(resps,doms,all.y=TRUE)
   resps[is.na(resps)] <- 0
   names(resps) <- c("Area of Expertise","Number of Briefs","Number of Responses")
@@ -399,4 +453,66 @@ plot_agencies_publishing_per_period <- function(briefs) {
                         showgrid = TRUE),
            yaxis = list(title = "Number of agencies",
                         showgrid = TRUE))
+}
+
+plot_current_brief_counts <- function(briefs) {
+  b_pub <- briefs %>%
+    group_by(published,type) %>%
+    summarise(pub = n()) %>%
+    rename(date = published)
+  
+  b_close <- briefs %>%
+    mutate(close = close + 1) %>%
+    group_by(close,type) %>%
+    summarise(closed = - n()) %>%
+    rename(date = close) %>%
+    full_join(b_pub, by = c("date","type")) %>%
+    replace_na(list(closed = 0, pub = 0)) %>%
+    mutate(net = closed + pub) %>%
+    select(-closed,-pub) %>%
+    spread(type,net, fill = 0) %>%
+    arrange(date) %>%
+    ungroup()
+  
+  net <- b_close %>% 
+    right_join(data.frame(date = seq(as.Date("2016-08-29"),max(briefs$close)+1,by = "day")), 
+               by = "date", 
+               fill = 0) %>%
+    replace_na(list(ATM = 0,Specialist = 0, RFX = 0, Outcome = 0, Training = 0)) %>%
+    mutate(Specialist_net = cumsum(Specialist),
+           RFX_net        = cumsum(RFX) + 0.075,
+           ATM_net        = cumsum(ATM) + 0.15,
+           Training_net   = cumsum(Training),
+           Outcome_net    = cumsum(Outcome),
+           total          = Specialist_net + RFX_net + ATM_net + 0.225 + Outcome_net + Training_net) %>%
+    filter(date > Sys.Date() - 30)
+  
+  format_label <- function(d, v, l) {
+    paste(l,date_to_string(d, format = "%d/%b"), round(v), sep = " - ")
+  }
+  
+  plot_ly(data = net, x =~ date, y =~ Specialist_net, 
+          type = "scatter", mode = "markers+lines", name = "Specialists", 
+          text =~ format_label(date, Specialist_net, "Specialists"), hoverinfo = 'text') %>%
+    add_trace(y =~ ATM_net, name = "ATM", text =~ format_label(date, ATM_net, "ATM")) %>%
+    add_trace(y =~ RFX_net, name = "RFX", text =~ format_label(date, RFX_net, "RFX")) %>%
+    add_trace(y =~ total,   name = "total", opacity = 1.0, text =~ format_label(date, total, "total")) %>%
+    add_segments(x = Sys.Date(), xend = Sys.Date(), y = 0, yend = max(net$total)+1, showlegend = FALSE,
+                 text = paste("today -",date_to_string(Sys.Date(), format = "%d/%b"))) %>%
+    layout(title = "Briefs open by type",
+           xaxis = list(title = ""),
+           yaxis = list(title = "open briefs"))
+  
+}
+
+plot_buyer_publishing_history <- function(domain_name, briefs) {
+  weeks <- datesSinceLaunch(unit = "week")
+  briefs %>% 
+    filter(email_domain == domain_name) %>% 
+    mutate(week = floor_date(published,unit="week")) %>% 
+    group_by(week) %>%
+    summarise(count = n()) %>%
+    right_join(weeks,by = c("week" = "dates")) %>%
+    replace_na(list(count = 0)) %>%
+    plot_ly(data=., x =~ week, y=~ count, type = "bar")
 }

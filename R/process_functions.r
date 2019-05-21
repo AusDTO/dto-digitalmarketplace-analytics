@@ -48,18 +48,26 @@ process_briefs <- function(b,buy,update_gs=TRUE) {
     row = which(df$id==i)
     #bQuery <- paste("https://dm-api.apps.platform.digital.gov.au/api/briefs",as.character(i),sep="/")
     bQuery <- prod_api(paste0("briefs/",as.character(i)))
-    bRaw   <- fetchFromAPI(bQuery,header)
+    bRaw   <- fetchFromAPI(bQuery,header())
     #print(bRaw$users)
     return(c(bRaw$users$id[1],bRaw$users$name[1],bRaw$users$emailAddress[1]))
+  }
+  
+  # adds a column with the name of the role where this is one of the frequent_roles
+  add_role_name_to_brief <- function(briefs) {
+    # calc edit distances for a role name
+    edit_distances <- function()
+    
+    distances <- lapply(frequent_roles$search,edit_distances)
   }
   
   #b$published <- date_to_string(b$published)
   #b$created   <- date_to_string(b$created) 
   sheet_name  <- 'allBriefs'
-  briefPresentationFilter <- c("id","status","title","organisation","openTo",
-                               "type","areaOfExpertise","budgetRange","contractLength",
-                               "created","published","duration","frameworkFramework","phase",
-                               "buyerID","buyerName",	"buyerEmail")
+  #briefPresentationFilter <- c("id","status","title","organisation","openTo",
+  #                             "type","areaOfExpertise","budgetRange","contractLength",
+  #                             "created","published","duration","frameworkFramework","phase",
+  #                             "buyerID","buyerName",	"buyerEmail")
   ## Update the briefs Google Sheet
   briefsSheet <- gs_title(sheet_name)
   # identify the last updated worksheet
@@ -214,11 +222,25 @@ process_sellers_and_applications <- function(s,a,u) {
 }
 
 # merge contracts and seller details
-process_contracts <- function(contracts,sellers) {
-  c <- contracts
-  s <- sellers
-  contracts <- left_join(c,s,by=c("Supplier.ABN" = "abn"))
+process_contracts <- function(contracts,sellers,exceptions) {
+
+  total <- sum(contracts$Value)
+  
+  s <- bind_rows(sellers,exceptions)
+  
+  contracts <- contracts %>%
+    left_join(s,by=c("Supplier.ABN" = "abn"))
+  
   attr(contracts,"timestamp") <- Sys.time()
+
+  # check for duplicates  
+  if (total != sum(contracts$Value)) {
+    cat(paste(total,"versus",sum(contracts$Value)),"\n")
+    cat("Duplicated contract notices: ")
+    contracts %>% filter(duplicated(CN.ID)) %>% select(CN.ID) %>% print()
+    stop("Value mismatch in contracts. Suspected duplicate seller")
+  }
+    
   return(contracts)
 }
 
@@ -235,7 +257,12 @@ process_seller_contact_list <- function(sellers,users) {
 }  
 
 # produce a summary file of agencies and their activity
-process_agency_summary <- function(buyers,briefs,contracts) {
+process_agency_summary <- function(buyers,briefs,contracts,
+                                   date_from = as.Date("2016-01-01"),date_to = Sys.Date()) {
+  # filter the briefs & contracts data to the date range
+  briefs    <- briefs    %>% filter(published >= date_from,published <= date_to)
+  contracts <- contracts %>% filter(Publish.Date >= date_from,Publish.Date <= date_to)
+  
   # optionally map the values in v to the mapped value in mappings
   # mappings has columns 
   map_values <- function(v,mappings) {
@@ -297,3 +324,18 @@ process_agency_summary <- function(buyers,briefs,contracts) {
   attr(agency_summary,"timestamp") <- Sys.Date()
   return(agency_summary)
 }
+
+
+process_jira_tickets <- function(j_tickets) {
+  jt <- j_tickets %>%
+    filter(type != "Supplier Assessment Step") %>% # don't know what these are, but don't look useful
+    # some edit records don't have seller_id - so recover them from the summary field
+    mutate(summary_id = str_match(summary, "\\(\\#(\\d+)\\)")[,2]) %>%
+    mutate(seller_id = case_when(
+                                  type == "Domain Assessment" & is.na(seller_id) ~ summary_id,
+                                  TRUE                                           ~ seller_id
+                                )) %>%
+    select(-summary_id)
+}
+
+
