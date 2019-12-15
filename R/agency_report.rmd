@@ -1,0 +1,253 @@
+---
+title: ""
+output:
+  html_document:
+    theme: journal
+df_print: paged
+pdf_document: default
+word_document: default
+always_allow_html: yes
+params:
+  agency: defence.gov.au,dst.defence.gov.au
+  agency_name: Department of Defence and Associated Agencies
+  agency_aust_name: Department of Defence,Australian Signals Directorate
+
+---
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+if (!exists("buyers")) {
+  library(knitr)
+  library(tidyr)
+  library(RColorBrewer)
+  library(dplyr)
+  library(plotly)
+  library(httr)
+  library(stringr)
+  library(kableExtra)
+  library(lubridate)
+  library(googlesheets)
+  source("../R/utilities.r")
+  source("../R/plotly_functions.r")
+  source("../R/assorted_functions.r")
+  source("../R/scrape_austender.r")
+  ## load the files - ensure these files are already produced
+  load(paste0(getwd(),rel_path_data(),latest_data_file()))
+  #cns <- load_austender_cns() %>% post_process_cns()
+}
+
+```   
+run date: `r date_to_string(Sys.Date())`  
+
+```{r, echo = FALSE, message = FALSE}
+ref_domain    <- gs_title("ref-domains") %>% gs_read(ws = "agencies")
+email_domains <- tibble(
+      email_domain = str_trim(unlist(str_split(params$agency,"\\,")))
+                      ) %>% 
+  left_join(ref_domain, by = "email_domain") %>% 
+  transmute(Agency = agencyName,
+            emails = email_domain)
+
+```
+## Agency summary report for <span style = "color:blue">`r params$agency_name`</span>      
+<br />  
+
+## Summary  
+```{r, echo=FALSE}
+b <- briefs %>%
+  filter(email_domain %in% email_domains$emails) %>% 
+  filter(status %in% c("closed", "live"))
+
+b_summ <- b %>%
+  summarise(
+    total    = n(),
+    earliest = min(published),
+    latest   = max(published)
+  )
+
+c_agencies <- unlist(str_split(params$agency_aust_name, "\\,"))
+c_summ <- contracts %>% 
+  filter(Agency %in% c_agencies) %>% 
+  group_by(sme_by_employees) %>% 
+  summarise(
+    count = n(),
+    value = sum(Value),
+    earliest = min(Publish.Date),
+    latest   = max(Publish.Date)
+  )
+
+summary_table = tibble(
+  name = c("total briefs published",
+           "earliest brief",
+           "latest brief",
+           "total contracts reported",
+           "contracts awarded to SMEs",
+           "percentage awarded to SMEs",
+           "total value of contracts reported",
+           "value awarded to SMEs",
+           "percentage of value awarded to SMEs",
+           "earliest contract",
+           "latest contract"
+           ),
+  values = c(b_summ$total, 
+             date_to_string(b_summ$earliest), 
+             date_to_string(b_summ$latest),
+             sum(c_summ$count),
+             c_summ[2,]$count,
+             paste0(round(c_summ[2,]$count/sum(c_summ$count)*100),"%"),
+             format_mil(sum(c_summ$value)),
+             format_mil(sum(c_summ[2,]$value)),
+             paste0(round(c_summ[2,]$value/sum(c_summ$value)*100),"%"),
+             date_to_string(min(c_summ$earliest)),
+             date_to_string(max(c_summ$latest)))
+)
+
+```
+`r kable(summary_table, col.name = c("","")) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))`   
+
+
+## Briefs published  
+<br />
+```{r, echo = FALSE, message = FALSE}
+b <- briefs %>%
+  filter(email_domain %in% email_domains$emails) %>% 
+  filter(status %in% c("closed", "live"))
+
+b_summ_day <- b %>% 
+  group_by(published) %>% 
+  count(published)
+
+b_summ_month <- b %>% 
+  mutate(month = floor_date(published, unit = "month")) %>% 
+  count(month) %>% 
+  right_join(datesSinceLaunch(unit = "month"), by = c("month" = "dates")) %>% 
+  replace_na(list(n = 0))
+
+p <- plot_ly(data = b_summ_day, x =~ published, y =~ n, type = "bar",
+             name = "by day") %>% 
+  add_trace(data = b_summ_month, x =~ month, y =~ n, type = "scatter",
+            name = "by month", mode = "lines+markers") %>% 
+  layout(title = "Briefs published by date",
+         xaxis = list(title = ""),
+         yaxis = list(title = "Number of briefs published"),
+         legend = list(x = 0.05, y = 0.95))
+```
+`r nrow(b)` brief`r if (nrow(b) != 1) 's'` published, from 
+`r date_to_string(min(b$published))` though to `r date_to_string(max(b$published))`.  
+`r p`  
+
+## Reported contracts by count   
+<br />  
+```{r, echo = FALSE}
+c_counts <- contracts %>%
+  filter(Agency %in% c_agencies) %>% 
+  mutate(month = floor_date(Publish.Date, unit = "month")) %>% 
+  group_by(month, sme_by_employees) %>% 
+  summarise(
+    count = n()
+  ) %>% 
+  spread(sme_by_employees, count) %>% 
+  right_join(datesSinceLaunch(unit = "month"), by = c("month" = "dates")) %>% 
+  rename(SME = `TRUE`,
+         Enterprise = `FALSE`) %>% 
+  replace_na(list(SME = 0, Enterprise = 0)) %>% 
+  ungroup() %>% 
+  mutate(
+    SME_total        = cumsum(SME),
+    Enterprise_total = cumsum(Enterprise),
+    total            = SME_total + Enterprise_total,
+    percent_sme      = round(SME_total / total * 100)
+  ) %>% 
+  filter(!is.nan(percent_sme))
+
+p2 <- plot_ly(data = c_counts, x =~ month, y =~ SME, 
+              type = "bar", name = "SME") %>% 
+  add_bars(y =~ Enterprise, name = "Enterprise") %>% 
+  add_trace(y =~ SME_total, name = "Total SME", type = "scatter", 
+            mode = "lines+markers") %>% 
+  add_trace(y =~ Enterprise_total, name = "Total enterprise", 
+            type = "scatter", mode = "lines+markers") %>% 
+  layout(barmode = "stack",
+         title = "Count of contracts reported",
+         xaxis = list(title = ""),
+         yaxis = list(title = "count"),
+         legend = list(x = 0.05, y = 0.95))
+```
+`r p2`   
+  
+```{r, echo = FALSE}
+p3 <- plot_ly(data = c_counts, x =~ month, y =~ percent_sme, 
+              type = "scatter", mode = "lines+markers") %>% 
+  layout(title = "Percentage count of contracts awarded to SMEs",
+         yaxis = list(title = "percent awarded to SME by count",
+                      range = c(0,101)))
+```
+<br />  
+`r p3`  
+
+## Reported contracts by value  
+```{r, echo = FALSE}  
+c_values <- contracts %>% 
+  filter(Agency %in% c_agencies) %>% 
+  mutate(month = floor_date(Publish.Date, unit = "month")) %>% 
+  group_by(month, sme_by_employees) %>% 
+  summarise(
+    value = sum(Value)
+  ) %>% 
+  spread(sme_by_employees, value) %>% 
+  right_join(datesSinceLaunch(unit = "month"), by = c("month" = "dates")) %>% 
+  rename(SME        = `TRUE`,
+         Enterprise = `FALSE`) %>% 
+  replace_na(list(SME = 0, Enterprise = 0)) %>% 
+  ungroup() %>% 
+  mutate(
+    SME_total        = cumsum(SME),
+    Enterprise_total = cumsum(Enterprise),
+    total            = SME_total + Enterprise_total,
+    percent_sme      = round(SME_total / total * 100)
+  ) %>% 
+  filter(!is.nan(percent_sme))
+  
+p4 <- plot_ly(data = c_values, x =~ month, y =~ SME_total, 
+              type = "scatter", mode = "lines+markers", name = "SME") %>% 
+  add_trace(y =~ Enterprise_total, name = "Enterprise") %>% 
+  add_trace(y =~ total, name = "Total") %>% 
+  layout(barmode = "stack",
+         title = "Reported contract values",
+         xaxis = list(title = ""),
+         yaxis = list(title = "value"),
+         legend = list(x = 0.05, y = 0.95))
+
+```
+`r p4`  
+<br />
+
+```{r, echo = FALSE}  
+p5 <- plot_ly(data = c_values, x =~ month, y =~ percent_sme, 
+              type = "scatter", mode = "lines+markers") %>% 
+  layout(title = "Percentage value of contracts awarded to SMEs",
+         yaxis = list(title = "percent awarded to SME by value",
+                      range = c(0,101)))
+```
+`r p5`   
+
+## Briefs published to date   
+```{r, echo = FALSE}
+b <- briefs %>%
+  filter(email_domain %in% email_domains$emails) %>% 
+  select(id, organisation, title, type, openTo, published) %>% 
+  arrange(desc(published))
+```
+  
+`r kables(b)`  
+
+## Contracts reported to date  
+```{r, echo = FALSE}
+c <- contracts %>% 
+    filter(Agency %in% c_agencies) %>% 
+    select(Agency, CN.ID, Supplier.Name, 
+           Supplier.ABN, Description, Publish.Date, 
+           Value, sme_by_employees) %>% 
+  arrange(desc(Publish.Date))
+```
+`r kables(c)`  

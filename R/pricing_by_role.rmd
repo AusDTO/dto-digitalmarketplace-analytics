@@ -74,11 +74,15 @@ all_brs         <- list(nrow(frequent_roles))
 
 for (i in 1:nrow(frequent_roles)) {
   #print(frequent_roles$role_name[i])
-  # identify briefs - using an edit distance approach - adist() to manage minor variations, eg spelling
+  # identify briefs - using an edit distance approach - adist() to manage minor variations, eg spelling, plurals etc
   edit_dist <- data.frame(
                 drop(
                   attr(
-                    adist(frequent_roles$role_name[i], b$title, counts = TRUE, partial = TRUE, ignore.case = TRUE), 
+                    adist(frequent_roles$search[i], 
+                          b$title, 
+                          counts = TRUE, 
+                          partial = TRUE, 
+                          ignore.case = TRUE), 
                     "counts"
                     )
                   )
@@ -93,6 +97,7 @@ for (i in 1:nrow(frequent_roles)) {
     
   br <- briefResponses %>%
     filter(id %in% edit_dist$id) %>%
+    filter(!is.na(dayRate), dayRate >= 500, dayRate <= 5000) %>% 
     mutate(areaOfExpertise = frequent_roles$role_name[i])
   
   all_brs[[i]] <- br

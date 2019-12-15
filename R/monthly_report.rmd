@@ -24,7 +24,7 @@ if (manual_date) {
   start <- floor_date(end,unit="month")
 }
 
-fy_start <- as.Date("2018-07-01")
+fy_start <- as.Date("2019-07-01")
 ninety_days <- seq(end-89,end,by="day")
 #reference_file <- "..\\data\\2017-09-19.Rdata"
 
@@ -55,6 +55,7 @@ Current financial year: `r fy_start`
 
 ```{r,echo=FALSE}
 agencies <- buyers %>%
+    filter(created_at <= end) %>% 
     group_by(entities) %>% 
     summarise(count=length(unique(email_domain)))
 cats <- c("Commonwealth - CCE",
@@ -103,7 +104,11 @@ buyer_counts <- briefs %>%
 # How are we encouraging competition?  
 ## Open to      
 ```{r,echo=FALSE}
-x <- briefs %>% group_by(openTo) %>% summarise(count = length(openTo))
+briefs[briefs$type == "ATM",]$openTo <- "All" # some are marked Some, but all ATMs are OTA
+x <- briefs %>% 
+  filter(published <= end) %>% 
+  group_by(openTo) %>% 
+  summarise(count = length(openTo))
 plot_ly(x,labels=~openTo, values=~count,
           textposition = 'outside',
           textinfo = 'label+percent+value',
@@ -119,13 +124,8 @@ plot_ly(x,labels=~openTo, values=~count,
 ## Types of briefs published    
 ```{r,echo=FALSE}
 x <- briefs %>% 
+  filter(published <= end) %>% 
   mutate(type = as.character(type)) %>%
-  #mutate(type = case_when(
-  #                type == "Outcome" & openTo == "All" ~ "ATM",
-  #                type == "Outcome"                   ~ "RFX",
-  #                TRUE                                ~ type
-  #              )
-  #       ) %>%
   group_by(type) %>% 
   summarise(count = length(type))
 plot_ly(x,labels=~type, values=~count,
@@ -307,17 +307,18 @@ Total briefs in each category since launch
 
 ```{r,echo=FALSE}
 aoe_counts <- briefs %>%
-  filter(published <= end, type=="Specialist") %>%
+  filter(published <= end) %>%
+  filter(!is.na(areaOfExpertise), areaOfExpertise != "") %>% 
   group_by(areaOfExpertise) %>%
-  summarise(count = length(areaOfExpertise)) %>%
+  summarise(count = n()) %>%
   arrange(desc(count))
 aoe_counts$areaOfExpertise <- as.character(aoe_counts$areaOfExpertise)
 # sum of counts excluding the top 4 
 sum_others <- sum(aoe_counts[6:dim(aoe_counts)[1],]$count)
 # number of Outcomes
 outcome_count <- briefs %>%
-    filter(published <= end, type=="Outcome") %>%
-    dim
+    filter(published <= end, is.na(areaOfExpertise) | areaOfExpertise == "") %>%
+    nrow()
 aoe_counts <- rbind(aoe_counts,
                         c("Total others (all but top 5 specialist)",sum_others))
 aoe_counts <- rbind(aoe_counts,
@@ -376,7 +377,7 @@ specialists <- briefResponses %>%
   summarise(responses = sum(attachments)) %>%
   filter(!is.na(responses))
 outcomes <- briefResponses %>% 
-  filter(openTo=="All", type=="Outcome") %>% 
+  filter( (openTo=="All" & type == "Outcome") | (type == "ATM")) %>% 
   filter(published > Sys.Date() - 365) %>%
   group_by(id) %>% 
   summarise(responses = n()) %>%
@@ -389,7 +390,7 @@ plot_ly(alpha = 0.6) %>%
   add_histogram(x=specialists$responses,type="specialists",name="histogram") %>%
   add_histogram(x=outcomes$responses,type="outcomes",name="histogram") %>%
   add_lines(x=dens_s$x,y=dens_s$y,name="Specialists") %>%
-  add_lines(x=dens_o$x,y=dens_o$y,name="Outcomes") %>%
+  add_lines(x=dens_o$x,y=dens_o$y,name="ATM/Outcomes") %>%
   layout(
     barmode="overlay",
     title="Seller Responses per Brief - reference graph",

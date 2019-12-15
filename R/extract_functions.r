@@ -26,11 +26,11 @@ extract_users <- function(header,include_dta_users = FALSE, cache = NULL) {
       users$frameworks <- sapply(users$frameworks,extract_framework)
     }
     # this can be entirely NAs, which will cause an error
-    if (is.vector(users$supplier)) {
-      users$seller_id <- NA
-    } else {
-      users$seller_id <- users$supplier$code
-    }
+    #if (is.vector(users$supplier)) {
+    #  users$seller_id <- NA
+    #} else {
+      users$seller_id <- users$supplier_code
+    #}
     return(users[!is.na(users$id),names(users) %in% user_column_names])
   }
 
@@ -71,7 +71,7 @@ extract_sellers <- function(header,include_deleted = FALSE, cache = NULL) {
                       "assessed_aoe","unassessed_aoe","legacy_aoe",
                       "product_only","dmp_framework","no_of_case_studies","number_of_employees",
                       "sme_by_employees","sme_badge",
-                      "is_recruiter","recruiter","regional","start_up","female_owned","indigenous",
+                      "is_recruiter","recruiter","start_up","female_owned","indigenous",
                       "address_line","suburb","state","country","postal_code",
                       "gov_exp_federal","gov_exp_international","gov_exp_local","gov_exp_state",
                       "gov_exp_no_experience","creation_time","liability_exp","work_comp_exp",
@@ -89,7 +89,18 @@ extract_sellers <- function(header,include_deleted = FALSE, cache = NULL) {
     
     bind_rows(domains) %>%
       select(code,domain_name,price_status,status) %>%
-      rename(aoe = domain_name)
+      rename(aoe = domain_name) %>% 
+      mutate(aoe = str_replace_all(aoe,"\\,",""))
+  }
+  
+  seller_prices <- function(sellers) {
+    prices <- sellers %>% 
+      select(code, starts_with("maxPrice")) %>% 
+      gather(key = "aoe", value = "price", starts_with("maxPrice"), na.rm = TRUE) %>% 
+      mutate(aoe = str_replace_all(aoe, "maxPrice\\.","")) %>% 
+      mutate(aoe = str_replace_all(aoe, "_", " ")) %>% 
+      mutate(aoe = str_replace_all(aoe, "\\,", ""))
+    prices
   }
   
   process_raw_sellers <- function(df) {
@@ -114,6 +125,7 @@ extract_sellers <- function(header,include_deleted = FALSE, cache = NULL) {
       return(FALSE)
     }
     
+  
     df$abn            <- gsub("\\s+","",df$abn)
     df$assessed_aoe   <- unlist(lapply(df$domains$assessed,function(x) {paste(x,collapse="|")}))
     df$unassessed_aoe <- unlist(lapply(df$domains$unassessed,function(x) {paste(x,collapse="|")}))
@@ -121,7 +133,7 @@ extract_sellers <- function(header,include_deleted = FALSE, cache = NULL) {
     df$auth_rep       <- df$representative
     df$auth_rep_email <- df$email
     df$email_domain   <- domains_from_emails(df$auth_rep_email)
-    df$product_only   <- df$assessed_aoe=="" & df$unassessed_aoe==""
+    #df$product_only   <- df$assessed_aoe=="" & df$unassessed_aoe==""
     df[is.na(df$number_of_employees),"number_of_employees"] <- "unknown"
     # this is SME determined by the declared number of employees
     df$sme_by_employees <- !df$number_of_employees %in% c("unknown","200+")
@@ -149,7 +161,7 @@ extract_sellers <- function(header,include_deleted = FALSE, cache = NULL) {
       }
     }
     df$signed_agreement_date <- sapply(df$signed_agreements,function(x) {
-      date_to_string(max(parse_utc_timestamp_date(x$signed_at)))
+      date_to_string(max(parse_utc_timestamp_date(x$signedAt), na.rm = TRUE))
     })
     df <- df[,names(df) %in% seller_columns]
     # might want to write some other lines to extract the addresses, contacts etc
@@ -164,16 +176,28 @@ extract_sellers <- function(header,include_deleted = FALSE, cache = NULL) {
   } else {
     sellers_raw <- cache
   }
-  case_studies   <- extract_case_studies(sellers_raw)
-  seller_domains <- bind_rows(lapply(sellers_raw,extract_domains_table))
+  #case_studies   <- extract_case_studies(sellers_raw)
   sellers        <- bind_rows(lapply(sellers_raw,process_raw_sellers))
   sellers        <- fill_logicals(sellers)
+  seller_domains <- bind_rows(lapply(sellers_raw,extract_domains_table)) %>% 
+    left_join(select(sellers, code, recruiter), by = "code") %>% 
+    left_join(seller_prices(sellers), by = c("code", "aoe"))
   attr(sellers,"timestamp") <- Sys.time()
   attr(seller_domains,"timestamp") <- Sys.time()
-  attr(case_studies,"timestamp") <- Sys.time()
+  #attr(case_studies,"timestamp") <- Sys.time()
 
   # temp fudge to remove seller 1574, which has a duplicate ABN
-  sellers <- sellers %>% filter(code != 1574)
+  sellers <- sellers %>% filter(code != 1574) # Chalfont Consulting
+  sellers <- sellers %>% filter(code != 2084) # Albacore Consulting
+  # and seller 1791 - soon to be deleted
+  sellers <- sellers %>% filter(code != 1791)
+  
+  s_rows  <- nrow(sellers)
+  sellers <- sellers %>% distinct() # records can be duplicated by the API
+  if (nrow(sellers) != s_rows) {
+    warning(paste((s_rows - nrow(sellers)),"duplicate rows were removed"))  
+  }
+  
   
   # check for duplicated sellers
   if (length(unique(sellers$abn)) != length(sellers$abn)) {
@@ -185,7 +209,8 @@ extract_sellers <- function(header,include_deleted = FALSE, cache = NULL) {
     stop("Duplicate sellers in the catalogue")
   }
 
-  return(list(sellers=sellers,case_studies=case_studies,seller_domains=seller_domains))
+  #return(list(sellers=sellers,case_studies=case_studies,seller_domains=seller_domains))
+  return(list(sellers=sellers,seller_domains=seller_domains))
 }
 
 #-------------------------------------------------------------------------------------------
@@ -194,12 +219,13 @@ extract_briefs  <- function(header, return_all = FALSE, cache = NULL) {
   briefShortFilter <- c("id","status","title","organisation","location","sellerSelector","sellerCategory",
                         "specialistRole","areaOfExpertise","budgetRange","contractLength","publishedAt",
                         "createdAt","duration","close","frameworkFramework","lot","updatedAt",
-                        "phase","essentials","nicetohaves","invitedSellerEmails","invitedSellerIDs")
+                        "phase","essentials","nicetohaves","invitedSellerEmails","invitedSellerIDs",
+                        "comprehensiveTerms")
   briefPresentationFilter <- c("id","status","title","organisation","location","openTo",
                                "type","specialistRole","areaOfExpertise","budgetRange","contractLength",
                                "created","published","close","duration","invitedSellerEmails",
-                               "invitedSellerIDs", #"frameworkFramework",
-                               "updatedAt","phase","essentials","nicetohaves")
+                               "invitedSellerIDs", "frameworkFramework",
+                               "updatedAt","phase","essentials","nicetohaves","comprehensiveTerms")
   
   # legacy version, extracts from the sellerEmailList and/or sellerEmail columns
   extract_invited_seller_emails <- function(br) {
@@ -314,7 +340,7 @@ extract_briefs  <- function(header, return_all = FALSE, cache = NULL) {
     briefs$sellerCategory  <- translate_domain_code(briefs$sellerCategory)
     briefs[briefs$type == "RFX",]$areaOfExpertise <- briefs[briefs$type == "RFX",]$sellerCategory
     #
-    briefs$areaOfExpertise <- gsub("\\,"," ",briefs$areaOfExpertise)
+    briefs$areaOfExpertise <- gsub("\\,","",briefs$areaOfExpertise)
     briefs$areaOfExpertise <- as.factor(briefs$areaOfExpertise)
     briefs$published <- parse_utc_timestamp_date(briefs$publishedAt)
     briefs$updatedAt <- parse_utc_timestamp_date(briefs$updatedAt)
@@ -345,7 +371,7 @@ extract_briefs  <- function(header, return_all = FALSE, cache = NULL) {
     return(briefsRaw[briefsRaw$status %in% c("closed","live"),])
   } 
   
-  return(briefsRaw)
+  return(briefsRaw[briefsRaw$status %in% c("closed","live", "withdrawn"),])
 }
 
 #-------------------------------------------------------------------------------------------
@@ -360,16 +386,19 @@ extract_brief_responses <- function(header, cache = NULL) {
   # converts a list of responses to essential/nice to have requirements,
   # concatenating them into a single text value
   convertLogic <- function(x) {
+    ######
+    return("dummy value")
+    ######
     label <- ""
     if (length(x) > 0) {
       for (i in 1:length(x)) {
         if (is.na(x[i])) {
           x[i] <- ""
         }
-        if (x[i] == TRUE) {
+        if (x[[i]] == TRUE) {
           label <- paste(label,"TRUE")
         } else {
-          if (x[i] == FALSE) {
+          if (x[[i]] == FALSE) {
             label <- paste(label,"FALSE")
           } else {
             label <- paste(label,i,"::-\n",removeBlankLines(as.character(x[i])),"\n")
@@ -402,8 +431,8 @@ extract_brief_responses <- function(header, cache = NULL) {
     # get rid of the links column, it's not useful
     df$links                  <- NULL
     # convert the list of logicals to a vector of labels
-    df$essentialRequirements  <- unlist(lapply(df$essentialRequirements,convertLogic))
-    df$niceToHaveRequirements <- unlist(lapply(df$niceToHaveRequirements,convertLogic))
+    df$essentialRequirements  <- "dummy value" # unlist(lapply(df$essentialRequirements,convertLogic))
+    df$niceToHaveRequirements <- "dummy value" # unlist(lapply(df$niceToHaveRequirements,convertLogic))
     if (!is.null(df$criteria)) {
       crit                   <- df$criteria
       crit$id                <- df$id
@@ -437,16 +466,21 @@ extract_brief_responses <- function(header, cache = NULL) {
   #re-order columns
   briefResponses        <- briefResponses[,c("briefId","id","applicationDate","supplierCode","supplierName",
                                              "specialistName",
-                                             "availability","dayRate","essentialRequirements","niceToHaveRequirements",
+                                             "availability","dayRate","hourRate","essentialRequirements","niceToHaveRequirements",
                                              "responses","respondToEmailAddress","attachments",
                                              "createdAt")]
   names(briefResponses) <- c("briefId","applicationId","applicationDate","supplierId","supplierName","specialistName",
-                             "availability","dayRate","essentialRequirements","niceToHaveRequirements","responses",
+                             "availability","dayRate","hourRate","essentialRequirements","niceToHaveRequirements","responses",
                              "respondToEmailAddress","attachments",
                              "createdAt")
-  briefResponses$dayRate <- as.numeric(briefResponses$dayRate)
+  briefResponses$dayRate  <- as.numeric(briefResponses$dayRate)
+  briefResponses$hourRate <- as.numeric(briefResponses$hourRate)
   attr(briefResponses,"timestamp") <- Sys.time()
-    return(briefResponses)
+  
+  briefResponses <- briefResponses %>% 
+    mutate(dayRate = case_when(is.na(dayRate) & !is.na(hourRate) ~ hourRate * 8,
+                               TRUE                              ~ dayRate))
+  return(briefResponses)
 }
 
 
@@ -677,33 +711,22 @@ extract_assessments <- function(header) {
 # sons is a vector of standing offer numbers to extract
 extract_austender <- function(sons = c("SON3413842","SON3364729")) {
   fetch_contracts <- function(son) {
-    url <- paste("https://www.tenders.gov.au/?event=public.reports.CN.Published.download&decorator=CSV&agencyStatus=0&categorySearchCode=&valueEnd=&dateType=Publish%20Date&SON_ID=",
+    url <- paste("https://www.tenders.gov.au/Reports/CnPublishedDownload?SonId=",
                  son,
-                 "&dateStart=&AgencyUUID=&supplier_name=&ABN=&confidentiality=&dateEnd=&valueStart=",sep="")
-    getdata<-GET(url=url)  
-    cont <- content(getdata,as="text")
+                 "&AgencyStatus=0&DateType=Publish%20Date",sep="")
+    cont              <- read.xlsx(url, startRow = 18)
+    cont$Publish.Date <- floor_date(convertToDate(cont$Publish.Date), unit = "day")
+    cont$Start.Date   <- convertToDate(cont$Start.Date)
+    cont$End.Date     <- convertToDate(cont$End.Date)
+    rownames <- names(cont)
+    rownames[12] <- "Value"
+    names(cont)  <- rownames
     cat(".")
     return(cont)
   }
   extract_son <- function(son) {
     cont <- fetch_contracts(son)
-    x <- strsplit(cont,"\\r\\n")[[1]]
-    header_line <- which(grepl("Agency\\tCN ID",x))
-    headings    <- strsplit(x[header_line],"\\t")[[1]]
-    headings    <- gsub("\\s+","\\.",headings)
-    y <- x[(header_line+1):length(x)]
-    z <- strsplit(y,"\\t")
-    df <- data.frame(do.call(rbind,z),stringsAsFactors = FALSE)
-    headings[12] <- "Value"
-    names(df) <- headings
-    df$Value  <- as.numeric(gsub("[\\$\\,]+","",df$Value))
-    df$Publish.Date <- string_to_date(df$Publish.Date,"%d-%b-%y")
-    df$Start.Date <- string_to_date(df$Start.Date,"%d-%b-%y")
-    df$End.Date <- string_to_date(df$End.Date,"%d-%b-%y")
-    for (i in 1:8) {
-      df[,i] <- gsub('[\\"\\=]+','',df[,i])
-    }
-    return(df)
+    return(cont)
   }
   x <- bind_rows(lapply(sons,extract_son))
   attr(x,"timestamp") <- Sys.time()
@@ -713,29 +736,14 @@ extract_austender <- function(sons = c("SON3413842","SON3364729")) {
 #-------------------------------------------------------------------------------------------
 # extracts a list of panels from Austender - returns the list of all currently open panels
 extract_panel_listing <- function() {
-  fetch_panels <- function() {
-    url <- "https://www.tenders.gov.au/?event=public.SON.searchDownload&download=true&atmtype=archived%2Cclosed%2Cpublished%2Cproposed&keywordtypesearch=AllWord&postcode=&valuefrom=&datestart=01%2DJul%2D2017&keyword=&contractto=&suppliername=&valueto=&category=&agencyuuid=&panelarrangement=&orderBy=Relevance&agencyreporttype=&type=sonSearchEvent&portfoliouuid=&participantstatus=&dateend=&publishfrom=&supplierabn=&datetype=current&agencyrefid=&multiagencyaccess=&contractfrom=&atmid=&agencyStatus=&numagencystatus=%2D1&publishto=&sonid=&multype=archived%2Cclosed%2Cpublished"
-    getdata<-GET(url=url)  
-    cont <- content(getdata,as="text")
-    cat(".")
-    return(cont)
-  }
-  cont <- fetch_panels()
-  x <- strsplit(cont,"\\r\\n")[[1]]
-  header_line <- which(str_detect(x,"^SON ID\\tTitle"))
-  headings    <- strsplit(x[header_line],"\\t")[[1]]
-  headings    <- gsub("\\s+","\\.",headings)
-  y <- x[(header_line+1):length(x)]
-  z <- strsplit(y,"\\t")
-  df <- data.frame(do.call(rbind,z),stringsAsFactors = FALSE)
-  names(df) <- headings
-  df$Publish.Date          <- string_to_date(df$Publish.Date,"%d-%b-%y")
-  df$Contract.Start.Date   <- string_to_date(df$Contract.Start.Date,"%d-%b-%y")
-  df$Contract.End.Date     <- string_to_date(df$Contract.End.Date,"%d-%b-%y")
-  for (i in c(1,2,3,5,8,9)) {
-    df[,i] <- gsub('[\\"\\=]+','',df[,i])
-  }
-  return(df)
+  x <- read.xlsx("https://www.tenders.gov.au/Search/SonAdvancedSearchDownload?Page=1&amp;ItemsPerPage=0&amp;SearchFrom=SonSearch&amp;Type=Son&amp;AgencyStatus=-1&amp;KeywordTypeSearch=AllWord&amp;DateType=Current", startRow = 18)
+  x %>% 
+    mutate(
+      Publish.Date        = dmy(Publish.Date),
+      Contract.Start.Date = dmy(Contract.Start.Date),
+      Contract.End.Date   = dmy(Contract.End.Date) 
+    ) %>% 
+    filter(Contract.End.Date >= Sys.Date())
 }
 
 #-------------------------------------------------------------------------------------------
@@ -743,9 +751,9 @@ extract_panel_listing <- function() {
 extract_vendors_from_panel <- function(son) {
 
   fetch_panel_listing <- function(son) {
-    url <- paste0("https://www.tenders.gov.au/?event=public.advancedsearch.CNSONRedirect&type=sonSearchEvent&keyword=&KeywordTypeSearch=AllWord&SONID=",
+    url <- paste0("https://www.tenders.gov.au/Search/SonAdvancedSearch?Page=1&ItemsPerPage=0&SearchFrom=SonSearch&Type=Son&AgencyStatus=-1&KeywordTypeSearch=AllWord&SonId=",
                   son,
-                  "&dateType=Publish+Date&dateStart=&dateEnd=&MultiAgencyAccess=&panelArrangement=&supplierName=&supplierABN=&ATMID=&AgencyRefId="  )
+                  "&DateType=Publish%20Date"  )
     getdata<-GET(url=url)  
     cont <- content(getdata,as="text")
     #cat(".")
@@ -763,7 +771,7 @@ extract_vendors_from_panel <- function(son) {
   pl         <- fetch_panel_listing(son)
   pl_split   <- str_split(pl,"\\r\\n")[[1]]
   deets_line <- pl_split[str_detect(pl_split,"Full Details")]
-  url        <- str_match(deets_line,"/\\?event=[^\"]+")[1,1]
+  url        <- str_match(deets_line,"\\/Son/Show/[\\w\\-]+")[1,1]
   pp         <- fetch_panel_page(url)
   x          <- str_split(pp,"(#Suppliers)|(#Agency)")[[1]][2]
   y          <- str_match_all(x,"<td>[^<]*</td>")[[1]]
@@ -1025,10 +1033,14 @@ extract_jira_tickets <- function(cache = NULL) {
     tickets$type           <- raw$fields$issuetype$name
     tickets$aoe       <- process_labels(raw$fields$labels)
     tickets$status    <- raw$fields$status$name
+    if (class(raw$fields$assignee) == "data.frame") {
+      tickets$assignee  <- raw$fields$assignee$displayName
+    }
     tickets$description <- gsub('"',"'",raw$fields$description)
     tickets$created   <- parse_date_time(substr(raw$fields$created,1,19),"Y m d H M S", tz = "Australia/Canberra")
     tickets$updated   <- parse_date_time(substr(raw$fields$updated,1,19),"Y m d H M S", tz = "Australia/Canberra")
     tickets$resolution_date <- parse_date_time(substr(raw$fields$resolutiondate,1,19),"Y m d H M S", tz = "Australia/Canberra")
+    tickets$due_date  <- ymd(raw$fields$duedate)
     return(tickets)
   }
   
@@ -1056,7 +1068,7 @@ extract_jira_tickets <- function(cache = NULL) {
                                "?jql=project=MARADMIN&maxResults=100",
                                "&&expand=changelog")
     j_token        <- paste("Basic",
-                            base64_enc(paste0(Sys.getenv("jira_login"),
+                            base64_enc(paste0(Sys.getenv("jira_login"),":",
                                               key_get("jira",keyring = "mkt"))))
     tick_fetch_get <- GET(url_get,add_headers(Authorization=j_token))
     raw            <- fromJSON(content(tick_fetch_get,type="text",encoding="UTF-8"))
@@ -1083,3 +1095,27 @@ extract_jira_tickets <- function(cache = NULL) {
   return(j_tickets)
 }
 
+# function to extract all current assessment requests made using the new
+# request assessments option
+extract_current_assessments <- function() {
+  assess_query  <- prod_api("evidence")
+  fetchFromAPI(assess_query,header())
+}
+
+# Extract past assessments using the new assessment process
+# This is quite crude at the moment, it just iterates from 1:maximum
+# and queries the /previous API to fetch completed assessment.
+# Most of these will be empty
+# 
+# 'exceptions' is a vector of assessment results that can be skipped
+
+extract_past_assessments <- function(exceptions = c(0), maximum = 1) {
+  fetch_assessment <- function(index) {
+    assess_query <- prod_api(paste0("evidence/",index,"/previous"))
+    getdata<-GET(url=assess_query, add_headers(Authorization=header()))
+    cat(".")
+    content(getdata,type="text",encoding="UTF-8")
+  }
+  results <- lapply(1:maximum, fetch_assessment)
+  
+}

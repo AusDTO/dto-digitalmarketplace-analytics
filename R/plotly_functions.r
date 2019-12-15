@@ -183,18 +183,24 @@ plot_agency_count_by_category_2 <- function(agencies,publish=FALSE) {
 plot_violins_of_day_rates <- function(bR) {
   # violin plots by area of expertise
   vals <- bR %>% filter(!is.na(areaOfExpertise),
-                                    !is.na(dayRate),
-                                    dayRate > 450,dayRate < 4000)
+                        !is.na(dayRate),
+                        dayRate > 450,dayRate < 4000,
+                        areaOfExpertise != "Change Training and Transformation")
   add_density_plot <- function(p,bR,i,color) {
     #  dens <- density(bR$dayRate,na.rm=TRUE,from=(min(bR$dayRate)-100))
+    med  <- median(bR$dayRate)
     dens <- density(bR$dayRate,na.rm=TRUE,from=350,to=3000)
     up   <- dens$y/max(dens$y) + (i*3 + 2)
     down <- (i*3 + 2) - dens$y/max(dens$y)
     n    <- bR[1,"areaOfExpertise"]
-    p <- p %>% add_lines(x=dens$x,y=up,mode="line",color=color,name=n)
-    p %>% add_lines(x=dens$x,y=down,mode="line",color=color,
+    print(paste(n,"-",med))
+    p <- p %>% add_lines(x=dens$x,y=up,mode="line",name=n) #color=color,
+    p %>% add_lines(x=dens$x,y=down,mode="line",#color=color,
                     fill = "tonexty",
-                    showlegend=FALSE)
+                    showlegend=FALSE) %>% 
+      add_segments(x = med, xend = med, 
+                   y = min(down)-0.25, yend = max(up)+0.25,
+                   color = "red")
   }
   
   resps <- vals %>% group_by(areaOfExpertise) %>% 
@@ -210,32 +216,33 @@ plot_violins_of_day_rates <- function(bR) {
   all_dens <- density(vals$dayRate,na.rm=TRUE,from=350,to=2750)
   up       <- all_dens$y/max(all_dens$y) + 2
   down     <- 2 - all_dens$y/max(all_dens$y)
+  med      <- median(vals$dayRate)
   p <- plot_ly(x=all_dens$x,y=up,
                type="scatter",
                mode="lines",
                name="All areas",
-               color=brewer.pal(10,"Paired")[1])
+               color="blue") #brewer.pal(13,"Paired")[1])
   p <- p %>% add_lines(x=all_dens$x,y=down,mode="line",
-                       color=brewer.pal(12,"Paired")[1],
+                       color="blue", #brewer.pal(12,"Paired")[1],
                        fill = "tonexty",
-                       showlegend=FALSE)
+                       showlegend=FALSE) %>% 
+    add_segments(x = med, xend = med, 
+                 y = min(down)-0.25, yend = max(up)+0.25,
+                 color = "red")
+  
   areas <- as.character(resps[resps$`Number of Responses`>10,]$`Area of Expertise`)
   for (i in 1:length(areas)) {
-    #  if (resps[resps$areaOfExpertise==areas[i],]$number_of_responses > 9) {
     p <- add_density_plot(p,
                           vals[vals$areaOfExpertise==areas[i],],
                           i,
-                          brewer.pal(12,"Paired")[i+1])
-    #  }
+                          "blue") #brewer.pal(12,"Paired")[i+1])
   }
   p <- p %>% layout(xaxis=list(range=c(0,3000),
                                title="Day rate trend ($ incl GST)", showaxis=FALSE),
                     yaxis=list(showticklabels=FALSE,
                                showgrid=FALSE,
                                showline=FALSE),
-                    #legend = list(orientation = 'h')
                     showlegend=FALSE)
-  #title="Distribution of Day Rates for Specialist Briefs")
   # annotations
   y_s   <- c(2,1:length(areas) * 3 + 2) + 0.6
   areas <- c("All areas",areas)

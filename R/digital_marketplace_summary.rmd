@@ -1,0 +1,105 @@
+---
+title: "Digital Marketplace Summary Figures"
+output:
+  html_document:
+    theme: journal
+    df_print: paged
+  pdf_document: default
+  word_document: default
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+if (!exists("buyers")) {
+  library(knitr)
+  library(tidyr)
+  library(RColorBrewer)
+  library(dplyr)
+  library(plotly)
+  library(httr)
+  library(stringr)
+  library(kableExtra)
+  library(lubridate)
+  source("../R/utilities.r")
+  source("../R/plotly_functions.r")
+  source("../R/assorted_functions.r")
+  source("../R/scrape_austender.r")
+  date_of_effect <- "2019-09-03"
+  #date_of_effect <- as.character(Sys.Date()) 
+  load(paste0(getwd(),rel_path_data(),latest_data_file()))
+  load(paste0(getwd(),rel_path_data(),"DMP_Stats-raw.Rdata"))
+}
+```
+
+
+
+```{r, echo = FALSE}
+presented_form <- marketplace_stats %>% 
+  mutate(`Total spend`      = format_mil(`Total spend`),
+         `Total spend SMEs` = format_mil(`Total spend SMEs`),
+         `Percent sellers on panel` = 
+                 round(`Panel members`/`Registered sellers`*100, digits = 1),
+         date = date - 1) %>% 
+  arrange(desc(date))
+
+```
+
+
+## Seller composition counts 
+```{r, echo=F}
+p0 <- plot_ly(data = marketplace_stats, x =~ date, y =~ `Registered sellers`, name = "Registered sellers",
+              mode = "markers", type = "scatter", marker = list(size = 3)) %>% 
+      add_trace(y =~ `Registered sellers SMEs`, name = 'Registered SMEs') %>% 
+      add_trace(y =~ `Panel members`, name = "Panelists") %>% 
+      add_trace(y =~ `Panel members SMEs`, name = "SME panelists") %>% 
+    layout(title = "",
+         xaxis = list(title = ""),
+         yaxis = list(title = "Seller count"),
+         legend = list(x = 0.05, y = 0.95))
+```
+`r p0`  
+   
+
+## Seller composition by percentages  
+```{r, echo=F}
+
+p1 <- plot_ly(data = presented_form, x =~ date, y =~ `Percent registered SMEs`, 
+              name = "% registered sellers SMEs",
+              mode = "markers", type = "scatter", marker = list(size = 3)) %>% 
+      add_trace(y =~ `Percent panelists SMEs`, name = "% panelists SMEs") %>% 
+      add_trace(y =~ `Percent sellers on panel`, name = '% sellers on panel') %>%
+    layout(title = "",
+         xaxis = list(title = ""),
+         yaxis = list(title = "Percent"),
+         legend = list(x = 0.05, y = 0.2))
+```  
+`r p1`  
+  
+  
+## Spend over time  
+```{r, echo=F}
+p2 <- plot_ly(data = marketplace_stats, x =~ date, y =~ `Total spend`, name = 'Total',
+             type = "scatter", mode = "markers", marker = list(size = 3)) %>% 
+  add_trace(y =~ `Total spend SMEs`, name = "SMEs only") %>% 
+  layout(title = "",
+         xaxis = list(title = ""),
+         yaxis = list(title = "Total spend"),
+         legend = list(x = 0.08, y = 0.92))
+```
+`r p2`  
+  
+## SME spend as percentage of total  
+```{r, echo=F}
+p3 <- plot_ly(data = marketplace_stats, x =~ date, y =~ `Percent SME spend`,
+             type = "scatter", mode = "markers", marker = list(size = 3)) %>%  
+  layout(title = "",
+         xaxis = list(title = ""),
+         yaxis = list(title = "Percent spend to SMEs", range = c(0,100)))
+
+```
+`r p3`  
+
+## Summary figures  
+
+`r kables(presented_form)`  

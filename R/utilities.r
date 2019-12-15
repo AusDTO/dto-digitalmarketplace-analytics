@@ -24,12 +24,18 @@ domains_regex <- x <- paste0("(",
 frequent_roles <- tibble(
                     search = c("agile coach","business analyst","content designer","data analyst","delivery manager",
                              "interaction designer","project manager","scrum master",
-                             "service design","service designer","service designers",
-                              "solution architect","user research"),
+                             "service design",
+                              "solution architect","user research", "assurance",
+                             "enterprise architect",
+                             "business architect",
+                             "enterprise solutions architect",
+                             "solution architect", "programm manager"),
                     role_name = c("Agile Coach","Business Analyst","Content Designer","Data Analyst","Delivery Manager",
                               "Interaction Designer","Project Manager","Scrum Master",
-                              "Service Designer","Service Designer","Service Designer",
-                              "Solution Architect","User Research")
+                              "Service Designer",
+                              "Solution Architect","User Research", "Assurance Specialist",
+                              "Enterprise Architect", "Business Architect", "Enterprise Solutions Architect",
+                              "Solution Architect", "Program Manager")
                   )
 
 log_filename     <- "MKT_reporting_log.csv"
@@ -47,6 +53,15 @@ dmp_sons         <- c("SON3413842","SON3364729")
 
 standard_objects <- c("users","buyers","sellers","case_studies","briefResponses",
                       "apps","assessments","contracts","feedback","briefs")
+
+dta_palette <- tibble(
+  colour  = c("print_grey","web_grey","dark_blue","mid_blue","light_blue"),
+  hexcode = c("#414141","#313131","#007099","#22A0CB","#45C2F0")
+)
+
+dta_colours <- function(colour = "dark_blue") {
+  dta_palette$hexcode[which(dta_palette$colour == colour)]
+}
 
 prod_api <- function(name) {
   return(paste0(prod_api_url,name))
@@ -84,7 +99,11 @@ setup_keyring <- function() {
 # creates a data frame with each day, week or month since launch 
 # defaults to day
 datesSinceLaunch <- function(unit="day") {
-  data.frame(dates = seq(as.Date("2016-08-29"),Sys.Date(),by=unit)) %>%
+  initial_date <- as.Date("2016-08-29")
+  if (unit == "month") {
+    initial_date <- as.Date("2016-09-01")
+  }
+  data.frame(dates = seq(initial_date,Sys.Date(),by=unit)) %>%
     mutate(dates = floor_date(dates,unit))
 }
 
@@ -210,6 +229,10 @@ temp_save <- function(obj,obj_name) {
   save(obj,file = paste0(getwd(),rel_path_data(),obj_name,"-raw.rdata"))
 }
 
+savey     <- function(obj_name, ...) {
+  save(..., file = paste0(getwd(),rel_path_data(),obj_name,"-raw.rdata"))
+}
+
 format_mil <- function(x,digits=2,order="M",dollars="$") {
   if (order=="M") {
     return (paste(dollars,round(x/1000000,digits=digits),"M",sep=""))
@@ -280,7 +303,7 @@ parse_utc_timestamp_date <- function(c) {
   return(date(parse_utc_timestamp_datetime(c)))
 }
 
-date_to_string <- function(date, format="%d/%m/%Y") {
+date_to_string <- function(date, format="%d/%b/%Y") {
   format(date,format)
 }
 
@@ -301,6 +324,11 @@ fill_logicals <- function(df) {
 
 # equivalent to the Quote Whitespace function in PERL
 qw <- function(x) unlist(strsplit(x, "[[:space:]]+"))
+
+qnl <- function(x) {
+  y <- unlist(str_split(x, "[\n]"))
+  y[nchar(y) > 0]
+}
 
 # translates 1 vector to another based on position
 # vec is a vector of values in 'from'
@@ -334,8 +362,8 @@ translate_domain_code <- function(vec) {
 }
 
 translate_type <- function(v) {
-  types <- c("digital-outcome","digital-professionals","training","rfx","atm")
-  t_types <- c("Outcome","Specialist","Training","RFX","ATM")
+  types <- c("digital-outcome","digital-professionals","training","rfx","atm", "specialist","training2")
+  t_types <- c("Outcome","Specialist","Training","RFX","ATM","Specialist","Training2")
   translate(types,t_types,v)
 }
 
@@ -353,7 +381,7 @@ translate_state_names <- function(v) {
   to   <- c("QLD","NSW","Vic","ACT","SA","WA","Tas","NT",
             "QLD","NSW","Vic","ACT","SA","WA","WA","Tas","NT", "Vic")
   # compare <- data.frame(from = from, to = to)
-  translate(from,to,v)
+  translate(str_to_lower(from),to,str_to_lower(str_squish(v)))
 }
 
 #test if a vector of email addresses are all valid, using a simple regex
@@ -468,15 +496,84 @@ clear_warnings <- function() {
 
 # cleanup any columns of type character to replace quotation marks as they can cause issues with csv files
 normalise_dataframe <- function(df) {
-  char_columns <- which(sapply(df, class) == "character")
-  for (i in char_columns) {
-    df[,i] <- str_replace_all(df[,i],'"', "'")
-  } 
+  if (class(df) == "data.frame") {
+    char_columns <- which(sapply(df, class) == "character")
+    for (i in char_columns) {
+      df[,i] <- str_replace_all(df[,i],'"', "'")
+    }
+  } else {
+    if (class(df) == "character") {
+      df <- str_replace_all(df,'"', "'")
+    }
+  }
   df
+}
+
+# standard normalisation of aoe names to facilitate matching between datasets
+normalise_aoe <- function(aoes) {
+  aoes <- str_to_lower(aoes)
+  aoes <- str_replace_all(aoes,"\\,|_"," ")
+  #aoes <- str_replace_all(aoes,"_"," ")
+  str_squish(aoes)
 }
 
 session_numbers <- function() {
   sessions <- read.csv(paste0(getwd(),rel_path_data(),"session_numbers.csv"))
   sessions$month <- string_to_date(sessions$month)
   sessions
+}
+
+# convenience function for converting a date string to a date
+ad <- function(dateasstring = Sys.Date()) {
+  if (class(dateasstring) == "Date") {
+    return(dateasstring)
+  }
+  as.Date(dateasstring)
+}
+
+# helper function for Knitr files to load the latest version of the
+# files
+latest_data_file <- function() {
+  dfiles <- list.files(paste0(getwd(), 
+                              rel_path_data()), 
+                       pattern = "^20\\d{2}\\-\\d{2}\\-\\d{2}\\.Rdata$")
+  tibble(dfiles, date = as.Date(str_sub(dfiles, 1,10))) %>% 
+    filter(date == max(date)) %>%  
+    pull(dfiles)
+}
+
+# wrapper for dplyr::count to also calculate percentages for each count
+count_percentages <- function(..., digits = 0) {
+  dplyr::count(...) %>% 
+    mutate(perc = round(n * 100 / sum(n), digits = digits)) %>% 
+    adorn_totals()
+}
+
+# calculates the total edit distance between two character strings
+# cv = 2 srting vector, eg c("foo","bar")
+# eg. to compare two columns in a data.frame
+# results <- apply(a.data.frame[,c("colX", "colY")], 1, edit_distance)
+# 
+edit_distance <- function(cv) {
+  c1 <- str_squish(cv[1])
+  c2 <- str_squish(cv[2])
+  sum(
+    drop(
+      attr(
+        adist(c1, 
+              c2, 
+              counts = TRUE, 
+              partial = FALSE, 
+              ignore.case = TRUE), 
+        "counts"
+      )
+    )
+  )  
+}
+
+# Compares two character vectors of the same length, returning the edit
+# distance between the two
+# Convenience function for function edit_distance
+edit_dist <- function(c1, c2) {
+  apply(data.frame(c1, c2), 1, edit_distance)
 }

@@ -7,7 +7,7 @@ save_data <- function() {
                                %in% 
                                qw("apps users sellers buyers briefResponses briefs 
                                    assessments contracts feedback all_sellers case_studies
-                                  agency_summary mkt_briefs j_tickets")
+                                  agency_summary j_tickets seller_domains")
                                ]
   save(list = objects_list,
        file = paste0(getwd(),rel_path_data(),substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
@@ -24,8 +24,9 @@ save_data <- function() {
     writer("contracts")
   writer(agency_summary,"agency-summary")
   writer(generate_seller_list(sellers),"sellers")
-  writer(mkt_briefs,"marketplace_briefs")
+  #writer(mkt_briefs,"marketplace_briefs")
   writer(panels,"list_of_sons")
+  writer(seller_activity, "seller_activity")
 }
 
 save_to_db <- function() {

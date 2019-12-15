@@ -111,14 +111,18 @@ filter_buyers <- function(buyers,includeDTA = FALSE, includeDeactivated = FALSE)
 }
 
   
-
+# filters teh full CNS file to the last amendment only
+# Note that the 'month' is calculated as the date the contract was
+# originally published
 filter_cns_to_latest_amendment <- function(cns) {
   ids <- cns %>% 
     group_by(CN.ID) %>%
     summarise(last_amendment = max(Amendment)) %>%
     mutate(unique.id = paste(CN.ID,last_amendment,sep="."))
   
-  cns %>% filter(unique.id %in% ids$unique.id) %>% mutate(month = floor_date(published,unit="month"))
+  cns %>% 
+    filter(unique.id %in% ids$unique.id) %>% 
+    mutate(month = floor_date(Publish.Date,unit="month"))
 }
 
 
@@ -132,7 +136,7 @@ update_jira_tickets <- function() {
     j_tickets <- read.csv(file       = paste0(getwd(),rel_path_data(),latest,"-j_tickets.csv"),
                           colClasses = c_classes)
     j_tickets$created         <- parse_date_time(j_tickets$created,"Y m d H M S")
-    j_tickets$updated         <- parse_date_time(j_tickets$updated,"Y m d H M S")
+    #j_tickets$updated         <- parse_date_time(j_tickets$updated,"Y m d H M S")
     j_tickets$resolution_date <- parse_date_time(j_tickets$resolution_date,"Y m d H M S")
   }
   
@@ -145,3 +149,8 @@ update_jira_tickets <- function() {
   return(j_tickets)
 }
 
+#update_summary_stats <- function() {
+#  generate_summary_stats_table(summary_stats)
+#  savey("DMP_Stats", summary_stats)
+#  summary_stats
+#}

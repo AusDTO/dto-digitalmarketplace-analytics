@@ -3,12 +3,10 @@ title: "Seller extract"
 output:
   html_document:
     theme: journal
-    toc: true
-    toc_float: true
 params:
   seller: 
     label: seller
-    value: FutureTrain
+    value: Infosys
     input: textInput
 ---
 
@@ -31,7 +29,7 @@ if (!exists("buyers")) {
   source("../R/plotly_functions.r")
   source("../R/assorted_functions.r")
   ## load the files - ensure these files are already produced
-  load(paste0(getwd(),rel_path_data(),substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
+  load(paste0(getwd(),rel_path_data(),latest_data_file()))
 }
 
 

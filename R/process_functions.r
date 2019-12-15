@@ -4,18 +4,19 @@
 # still to add:
 # - inline updates to the reference domains, rather than raise an error
 # - add the date the buyer will go, or went inactive
-process_buyers <- function(u,update = FALSE) {
+process_buyers <- function(u, agencies, update = FALSE) {
   b             <- u[u$role=="buyer",]
-  missing_domains <- "foo"
+  #missing_domains <- "foo"
+  missing_domains <- b %>% 
+    filter(!email_domain %in% agencies$email_domain) %>% 
+    pull(email_domain)
   while(length(missing_domains) > 0) {
+    print(paste0("Missing domains ",missing_domains))
+    readline("Enter details in the ref-domains sheet and hit enter to continue")
     agencies      <- gs_title("ref-domains") %>% gs_read(ws = "agencies")
-    # check if all agency domains names are present in the agencies df
-    e_domains       <- unique(b$email_domain)
-    missing_domains <- e_domains[!e_domains %in% agencies$email_domain]
-    if (length(missing_domains) > 0) {
-      print(paste0("Missing domains ",missing_domains))
-      readline("Enter details in the ref-domains sheet and hit enter to continue")
-    }
+    missing_domains <- b %>% 
+      filter(!email_domain %in% agencies$email_domain) %>% 
+      pull(email_domain)
   }
   b            <- merge(b,agencies,by.x="email_domain",by.y="email_domain",all.x = TRUE)
   # legacy missing check - leaving in place, but should not be triggered any more
@@ -26,6 +27,17 @@ process_buyers <- function(u,update = FALSE) {
     print(missing)
     stop()
   }
+  # create some buyers to represent teams
+  agencies_ <- agencies %>% 
+    filter(!is.na(teams)) %>% 
+    mutate(teams = str_split(teams, "\\|")) %>% 
+    unnest(teams) %>% 
+    mutate(active = TRUE,
+           id     = as.integer(teams) + 1000000,
+           name   = "TEAM",
+           role   = "team")
+  b <- bind_rows(b, agencies_)
+
   # filter the inactive buyers
   # b <- b[b$active,]
   attr(b,"timestamp") <- Sys.time()
@@ -40,34 +52,33 @@ process_sellers <- function(sellers) {
   return(sellers)
 }
 
-process_briefs <- function(b,buy,update_gs=TRUE) {
+process_briefs <- function(b, buy, update_gs=TRUE) {
   
   # fetch the buyer details for an individual brief
   fetchBuyer <- function(i,df) {
-    #print(which(df$id==i))
-    row = which(df$id==i)
-    #bQuery <- paste("https://dm-api.apps.platform.digital.gov.au/api/briefs",as.character(i),sep="/")
     bQuery <- prod_api(paste0("briefs/",as.character(i)))
     bRaw   <- fetchFromAPI(bQuery,header())
-    #print(bRaw$users)
-    return(c(bRaw$users$id[1],bRaw$users$name[1],bRaw$users$emailAddress[1]))
+    if (!is.null(bRaw$users$id)) {
+      return(tibble(id         = i, 
+                    buyerID    = bRaw$users$id[1], 
+                    buyerName  = bRaw$users$name[1], 
+                    buyerEmail = bRaw$users$emailAddress[1]) )
+    } else {
+      return(tibble(id     = i,
+                    teamID = bRaw$teamBriefs$teamId[1]))
+    }
+    NULL
   }
   
   # adds a column with the name of the role where this is one of the frequent_roles
+  # NOT YET BUILT - IGNORE THIS
   add_role_name_to_brief <- function(briefs) {
     # calc edit distances for a role name
     edit_distances <- function()
-    
     distances <- lapply(frequent_roles$search,edit_distances)
   }
   
-  #b$published <- date_to_string(b$published)
-  #b$created   <- date_to_string(b$created) 
   sheet_name  <- 'allBriefs'
-  #briefPresentationFilter <- c("id","status","title","organisation","openTo",
-  #                             "type","areaOfExpertise","budgetRange","contractLength",
-  #                             "created","published","duration","frameworkFramework","phase",
-  #                             "buyerID","buyerName",	"buyerEmail")
   ## Update the briefs Google Sheet
   briefsSheet <- gs_title(sheet_name)
   # identify the last updated worksheet
@@ -77,22 +88,48 @@ process_briefs <- function(b,buy,update_gs=TRUE) {
   lastUpdate  <- max(temp)
   # read the last worksheet
   lastBriefs  <- briefsSheet %>% gs_read(ws = as.character(lastUpdate))
-  sc          <- c("id","buyerID","buyerName","buyerEmail")
+  sc          <- c("id","buyerID","buyerName","buyerEmail", "teamID")
   lastBriefs  <- lastBriefs[,sc]
+  lastBriefs$teamID <- as.integer(lastBriefs$teamID)
   # merge the additional columns
   updatedBriefs <- merge(b,lastBriefs,by.x="id",by.y="id",all.x=TRUE)
   
-  # some seriously ugly code here, but it works ...
   if (sum(is.na(updatedBriefs$buyerID) > 0)) {
-    x <- lapply(updatedBriefs[is.na(updatedBriefs$buyerID),"id"],fetchBuyer,df = updatedBriefs)
-    buyer_users              <- matrix(data=unlist(x),ncol=3,byrow=TRUE)
-    updatedBriefs[is.na(updatedBriefs$buyerID),"buyerID"]       <- as.numeric(buyer_users[,1])
-    updatedBriefs[is.na(updatedBriefs$buyerName),"buyerName"]   <- buyer_users[,2]
-    updatedBriefs[is.na(updatedBriefs$buyerEmail),"buyerEmail"] <- buyer_users[,3]
-    #updatedBriefs[is.na(updatedBriefs$updated),"updated"] <- updatedBriefs[is.na(updatedBriefs$updated),"updatedAt"]
+    x <- bind_rows(lapply(updatedBriefs[is.na(updatedBriefs$buyerID),"id"],
+                          fetchBuyer,
+                          df = updatedBriefs))
+    if (is.null(x$teamID)) {
+      x$teamID <- NA
+    }
+    if (is.null(x$buyerID)) {
+      x$buyerID <- NA
+    }
+    y <- x %>% 
+      mutate(buyerID = case_when(is.na(buyerID) ~ as.integer(teamID+1000000), 
+                                 TRUE           ~ buyerID))
+    allBuyers <- updatedBriefs %>% 
+      select(id, buyerID, buyerName, buyerEmail, teamID) %>% 
+      filter(!is.na(buyerID)) %>% 
+      bind_rows(y)
+    updatedBriefs <- 
+      updatedBriefs %>% 
+      select(-buyerID, -buyerName, -buyerEmail, -teamID) %>% 
+      left_join(allBuyers, by = "id")
   }
   buy <- buy[,c("id","email_domain","category","agencyName","reports","entities")]
+  
   updatedBriefs <- left_join(updatedBriefs,buy,by=c("buyerID" = "id"))
+  
+  if (sum(is.na(updatedBriefs$entities)) > 0) {
+    x <- updatedBriefs %>% 
+      filter(is.na(entities), !is.na(teamID)) %>% 
+      pull(teamID)
+    if (nrow(x) > 0) {
+      print(x)
+      stop("Missing 1 of more team IDs")
+    }
+  }
+  
   attr(updatedBriefs,"timestamp") <- Sys.time()
     # write back to the spreadsheet
   if (update_gs) {
@@ -192,7 +229,7 @@ process_seller_email_list <- function(s,u,a) {
 # combines sellers and applicants into a single DF
 process_sellers_and_applications <- function(s,a,u) {
   s_columns <- c("name","code","abn","application_id","assessed_aoe","unassessed_aoe","legacy_aoe","creation_time","website",
-            "contact_email","product_only","dmp_framework")
+            "contact_email","dmp_framework") #"product_only",
   s         <- s[,s_columns]
   names(s)  <- paste("seller",s_columns,sep="_")
   # remove the edits from the applications
@@ -222,26 +259,37 @@ process_sellers_and_applications <- function(s,a,u) {
 }
 
 # merge contracts and seller details
-process_contracts <- function(contracts,sellers,exceptions) {
+process_contracts <- function(contracts,sellers,exceptions, agencies) {
 
+  a <- agencies %>% 
+    select(austender_name, entities) %>% 
+    filter(!is.na(austender_name), austender_name != "")
+  
   total <- sum(contracts$Value)
   
   s <- bind_rows(sellers,exceptions)
   
-  contracts <- contracts %>%
+  c <- contracts %>%
+    left_join(a,by = c("Agency" = "austender_name")) %>% 
     left_join(s,by=c("Supplier.ABN" = "abn"))
   
-  attr(contracts,"timestamp") <- Sys.time()
+  attr(c,"timestamp") <- Sys.time()
 
   # check for duplicates  
-  if (total != sum(contracts$Value)) {
-    cat(paste(total,"versus",sum(contracts$Value)),"\n")
+  if (total != sum(c$Value)) {
+    cat(paste(total,"versus",sum(c$Value)),"\n")
     cat("Duplicated contract notices: ")
-    contracts %>% filter(duplicated(CN.ID)) %>% select(CN.ID) %>% print()
+    c %>% filter(duplicated(CN.ID)) %>% select(CN.ID) %>% print()
     stop("Value mismatch in contracts. Suspected duplicate seller")
   }
-    
-  return(contracts)
+  
+  if (sum(is.na(c$entities))) {
+    cat("Missing or mismatched agencies in contracts file")
+    c %>% filter(is.na(c$entities)) %>% pull(Agency) %>% unique() %>% print()
+    stop()
+  }
+
+  return(c)
 }
 
 # generates a list of contact emails for a given set of sellers
@@ -338,4 +386,14 @@ process_jira_tickets <- function(j_tickets) {
     select(-summary_id)
 }
 
-
+# marks contract records by entity type
+process_contract_records <- function(cns) {
+  entities       <- gs_title("ref-domains") %>% 
+    gs_read(ws = "agencies") %>% 
+    select(entities, austender_name)
+  
+  x <- cns %>% 
+    left_join(entities, by = c("Agency" = "austender_name"))
+  
+  return(x)
+}

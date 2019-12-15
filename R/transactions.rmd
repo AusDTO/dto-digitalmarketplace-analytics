@@ -239,7 +239,7 @@ c <- contracts[!contracts$sme_by_employees,]
 cbd$cum_e_value  <- sapply(cbd$dates,cumulation,c$Publish.Date,c$Value)
 cbd$cum_e_number <- sapply(cbd$dates,cumulation,c$Publish.Date,c$Value,"length")
 
-plot_ly(cbd, x= ~dates, y = ~cum_value, name = 'SME', type='scatter',
+p <- plot_ly(cbd, x= ~dates, y = ~cum_value, name = 'SME', type='scatter',
         mode= 'non', fill = 'tozeroy', hoverinfo= 'text',
         text = ~paste(date_to_string(cbd$dates),
                        "<br />SME -<br />Contracts: ",cbd$cum_sme_number,

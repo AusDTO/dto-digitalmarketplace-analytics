@@ -123,8 +123,7 @@ b <- briefs %>%
   summarise(count=length(unique(agencyName))) %>%
   filter(month < floor_date(Sys.Date(),unit="month")) # exclude the current month
 plot_ly(data=b,x=~month,y=~count,type="scatter",mode="lines+markers") %>%
-  layout(title="Number of agencies publishing per month",
-         yaxis=list(range=c(0,40)))
+  layout(title="Number of agencies publishing per month")
 ```
   
 ### Published briefs
@@ -302,7 +301,7 @@ counts$email_domain <- factor(counts$email_domain,levels=counts$email_domain)
 sellers$applied <- sellers$code %in% briefResponses$supplierId
 sellers$status  <- "registered"
 sellers[nchar(sellers$assessed_aoe) > 1,]$status  <- "active"
-sellers[nchar(sellers$legacy_aoe) > 1 & sellers$dmp_framework,]$status  <- "upgraded"
+#sellers[nchar(sellers$legacy_aoe) > 1 & sellers$dmp_framework,]$status  <- "upgraded"
 sellers[!sellers$dmp_framework,]$status <- "legacy"
 counts <- sellers %>% group_by(status, applied) %>% summarise(count =  length(applied))
 as        <- sum(counts[counts$status %in% c("active","upgraded"),"count"])
@@ -315,21 +314,6 @@ Total number of active sellers                 | `r as`
 Active sellers who've applied for any briefs   | `r asApplied`  
 % active sellers who've applied for any brief  | `r asperc`  
 Registered sellers | `r sum(counts[counts$status=="registered","count"])`  
-
-  
-```{r echo=FALSE}
-a <- apps[apps$type %in% c("new","upgrade")&apps$status=="submitted",]
-a$days_since_sub <- as.numeric(Sys.Date() - a$submitted_at_date)
-
-dsppSU <- with(apps,sum(type %in% c("new","upgrade")&apps$status=="submitted"&type=="upgrade"))
-dsppST <- with(apps,sum(type %in% c("new","upgrade")&apps$status%in%c("saved","reverted")&type=="upgrade"))
-dsppNS <- sum(is.na(sellers$application_id)&!sellers$dmp_framework)
-dsppAP <- with(sellers,sum(nchar(legacy_aoe)>1&dmp_framework))
-dmpPROD <- with(sellers,sum(nchar(legacy_aoe)<2&product_only))
-dmpASS  <- with(sellers,sum(dmp_framework&nchar(assessed_aoe)>1&nchar(legacy_aoe)<2&!product_only))
-dmpREG <- with(sellers,sum(dmp_framework&nchar(assessed_aoe)<2&nchar(legacy_aoe)<2&!product_only))
-totes <- dsppAP+dsppNS+dsppST+dsppSU + dmpASS+dmpPROD+dmpREG
-```
 
 ### Seller counts  
   
@@ -389,23 +373,6 @@ plot_ly(aoe_df,x=~domains,y=~aoes,name="Assessed",type="bar") %>%
          barmode = 'stack')
 ```
 
-  
-#### Registered Sellers  
-  
-| buyer type and status | number |  
-|--|--|  
-| DSPP not started | `r dsppNS` |  
-| DSPP started | `r dsppST` |  
-| DSPP submitted | `r dsppSU` |  
-| DSPP approved | `r dsppAP` |  
-| * DSPP subtotal * | * `r sum(dsppNS,dsppST,dsppSU+dsppAP) ` * |
-| DMP registered | `r dmpREG` |  
-| DMP active | `r dmpASS` |  
-| DMP product only | `r dmpPROD` |  
-| * DMP (new sellers) subtotal * | * `r sum(dmpREG,dmpASS,dmpPROD) ` * |
-| Total of the above | `r totes` |  
-| Cross check (should equal the 'Total of the above') | `r dim(sellers)[1]` |  
-  
 #### Applications  
   
 ```{r echo=FALSE}
@@ -416,7 +383,7 @@ rejected <- with(apps,sum(status=="assessment_rejected"))
 ```  
 | Applicant status | number |  
 |--|--|  
-| Submitted, awaiting assessment | `r sum(a$type=="new")`|  
+| Submitted, awaiting assessment | `r sum(apps$status == "submitted" & apps$type == "new")`|  
 | In progress - reverted | `r ipREV` |  
 | In progress - not yet submitted, has entered ABN | `r ipABN`|  
 | In progress - not yet submitted, has not entered ABN | `r ipNO_ABN`|  
@@ -436,46 +403,9 @@ rejected <- with(apps,sum(status=="assessment_rejected"))
   
 ### New seller assessments
 
-```{r echo=FALSE}
-#a[is.na(a$days_since_sub),]$days_since_sub <- 0
-xmax <- max(a[a$type %in% c("new","upgrade"),]$days_since_sub)
-xbins <- list(start=1,end=xmax,size=1)
-p <- plot_ly(x = a[a$type=="new","days_since_sub"],type="histogram",name="new",xbins=xbins)
-#if (length(a[a$type=="new","days_since_sub"])>0) {
-##  p <- add_histogram(p,x = a[a$type=="new","days_since_sub"],name="new",xbins=xbins) 
-#}
-if (length(a[a$type=="upgrade","days_since_sub"]) > 0) {
-  p <- add_histogram(p,a[a$type=="upgrade","days_since_sub"],name="upgrade",xbins=xbins)
-} 
-p <- layout(p,barmode="overlay",
-         title = 'Unassessed Application or Upgrades',
-           xaxis = list(title = "days since submission",
-                        showgrid = TRUE),
-           yaxis = list(title = "number of submissions",
-                        showgrid = TRUE))
-p
-```
-
-     
-  
-| Total of | Count |
-|---|---|  
-| New applications not yet assessed | `r sum(a$type=="new")` |  
-| Upgrades not yet assessed | `r sum(a$type=="upgrade")` |  
 
 ### Seller edits
-```{r echo=FALSE}
-a <- apps[apps$type=="edit"&apps$status=="submitted",]
-a$days_since_sub <- as.numeric(Sys.Date() - a$submitted_at_date)
-plot_ly(x=a$days_since_sub,type="histogram",nbinsx=20) %>% 
-  layout(barmode="overlay",
-         title = 'Unassessed Edit Requests',
-           xaxis = list(title = "days since submission",
-                        showgrid = TRUE),
-           yaxis = list(title = "number of submissions",
-                        showgrid = TRUE))
 
-```
   
 ---  
   
