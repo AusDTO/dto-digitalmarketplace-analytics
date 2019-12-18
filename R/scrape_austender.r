@@ -72,7 +72,7 @@ update_contract_summary_notices <- function(cns,saveOnCompletion = TRUE) {
   }
   cns <- bind_rows(cns,new_cns)
   if (saveOnCompletion) {
-    temp_save(cns,"CNS")
+    save_reference(cns,"CNS-raw.rdata")
   }
   return(cns)
 }
@@ -105,7 +105,7 @@ post_process_cns <- function(cns) {
 } 
 
 load_austender_cns <- function() {
-  load(paste0(getwd(),rel_path_data(),"CNS-raw.rdata"))
+  load(paste0(getwd(),rel_path_reference(),"CNS-raw.rdata"))
   cns <- obj
   rm(obj)
   return(cns)

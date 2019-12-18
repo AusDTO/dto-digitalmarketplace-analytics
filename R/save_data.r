@@ -6,8 +6,8 @@ save_data <- function() {
   objects_list <- objects_list[objects_list 
                                %in% 
                                qw("apps users sellers buyers briefResponses briefs 
-                                   assessments contracts feedback all_sellers case_studies
-                                  agency_summary j_tickets seller_domains")
+                                   assessments contracts feedback agencies
+                                   j_tickets")
                                ]
   save(list = objects_list,
        file = paste0(getwd(),rel_path_data(),substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
@@ -22,10 +22,10 @@ save_data <- function() {
   contracts %>% 
     select(Agency:Value,code,name,is_recruiter,indigenous,sme_by_employees) %>%
     writer("contracts")
-  writer(agency_summary,"agency-summary")
+  #writer(agency_summary,"agency-summary")
   writer(generate_seller_list(sellers),"sellers")
   #writer(mkt_briefs,"marketplace_briefs")
-  writer(panels,"list_of_sons")
+  #writer(panels,"list_of_sons")
   writer(seller_activity, "seller_activity")
 }
 

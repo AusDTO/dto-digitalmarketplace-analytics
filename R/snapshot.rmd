@@ -16,15 +16,15 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r,include=FALSE}
 # if rendered in a new R session, load the session values
 if (!exists("buyers")) {
-  source("utilities.r")
-  source("plotly_functions.r")
-  source("assorted_functions.r")
   library(knitr)
   library(tidyr)
   library(RColorBrewer)
   library(dplyr)
   library(plotly)
   library(httr)
+  source("utilities.r")
+  source("plotly_functions.r")
+  source("assorted_functions.r")
   ## load the files - ensure these files are already produced
   load(paste0(getwd(),"\\..",rel_path_data,substr(as.POSIXct(Sys.time()),1,10),".Rdata"))
 }
@@ -267,13 +267,13 @@ Outcomes | `r paste(paste(summary(outcomes$responses),collapse = " | "),"  ")`
       
 ### Publishing Agencies  
 ```{r echo=FALSE}
-b <- briefs[briefs$id > 0,c("id","organisation","buyerEmail","email_domain")]
-b <- b[!duplicated(b$id),]
+#b <- briefs[briefs$id > 0,c("id","organisation","buyerEmail","email_domain")]
+#b <- b[!duplicated(b$id),]
 #b$domain <- matrix(unlist(strsplit(b$buyerEmail,"@")),ncol=2,byrow=TRUE)[,2]
-counts <- b %>% group_by(email_domain) %>%
-  summarise(count = length(id), agency = organisation[1]) %>%
-  arrange(desc(count))
-counts$email_domain <- factor(counts$email_domain,levels=counts$email_domain) 
+#counts <- b %>% group_by(email_domain) %>%
+#  summarise(count = length(id), agency = organisation[1]) %>%
+#  arrange(desc(count))
+#counts$email_domain <- factor(counts$email_domain,levels=counts$email_domain) 
 #plot_ly(counts,x=~count,y=~domain,type="bar",orientation='h') %>%
 #  layout(yaxis = list(title = #'',tickfont=list(color="darkblue"),font='arial',size=12),
 #         xaxis = list(title = ''),
@@ -282,6 +282,12 @@ counts$email_domain <- factor(counts$email_domain,levels=counts$email_domain)
 #         height=1000,
 #         margin = list(l = 200, r = 10, t = 10, b = 20))
 
+counts <- briefs %>% 
+  filter(status %in% c("live", "closed")) %>% 
+  group_by(agencyName) %>% 
+  summarise(`Opportunities published` = n()) %>% 
+  rename(Agency = agencyName) %>% 
+  arrange(desc(`Opportunities published`))
 ```
    
    
@@ -391,64 +397,4 @@ rejected <- with(apps,sum(status=="assessment_rejected"))
   
 
 ---  
-
-## Applications  
-  
----  
-
-## Operations  
-  
-### Domain assessments  
-
-  
-### New seller assessments
-
-
-### Seller edits
-
-  
----  
-  
-## Buyers  
-  
-### Buyer and Agency Counts  
-  
-  
-```{r echo=FALSE}
-plot_buyer_counts_2(buyers) 
-agencies <- buyers %>%
-                group_by(category) %>% 
-                summarise(count=length(category))  
-agencies$percent <- round(agencies$count/sum(agencies$count) * 100,digits=1)
-agencies <- rbind(agencies,c("Total buyers",sum(agencies$count),100.0))
-```  
-  
-* Active buyers have signed in or registered in the past 90 days
-
-  
-### Buyer Counts by Agency Category  
-`r kables(agencies)`  
-  
-`r plot_buyer_count_by_agency_category(buyers)`  
-    
-
-  
-### Agency Counts by Category  
-```{r echo=FALSE}
-agencies_counts <- buyers %>%
-                group_by(email_domain,category) %>% 
-                summarise(count=length(email_domain)) %>%
-                group_by(category) %>%
-                summarise(count = length(category))
-agencies_counts$percent <- round(agencies_counts$count/sum(agencies_counts$count) * 100,digits=1)
-agencies_counts <- rbind(agencies_counts,c("Total agencies",sum(agencies_counts$count),100.0))
-
-```
-`r kables(agencies_counts)`     
-  
-`r plot_agency_count_by_category(buyers)`    
-
----   
-
-
 

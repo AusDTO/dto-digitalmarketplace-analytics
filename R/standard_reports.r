@@ -1,11 +1,9 @@
 standard_reports <- function() {
   dir <- getwd()
-  rmarkdown::render("R\\snapshot.rmd",output_dir=paste0(getwd(),"\\reports\\"))
-  rmarkdown::render("R\\transactions.rmd",output_dir=paste0(getwd(),"\\reports\\"))
-  rmarkdown::render("R\\digital_marketplace_summary.rmd",output_dir=paste0(getwd(),"\\reports\\"))
-  #rmarkdown::render("R\\key_facts.rmd",output_dir=paste0(getwd(),"\\reports\\"))
-  #rmarkdown::render("R\\pricing_analysis.rmd",output_dir=paste0(getwd(),"\\reports\\"))
-  #rmarkdown::render("R\\monthly_performance.rmd",output_dir=paste0(getwd(),"\\reports\\"))
+  rmarkdown::render("R/snapshot.rmd",output_dir=paste0(getwd(),"/reports/"))
+  rmarkdown::render("R/transactions.rmd",output_dir=paste0(getwd(),"/reports/"))
+  rmarkdown::render("R/digital_marketplace_summary.rmd",output_dir=paste0(getwd(),"/reports/"))
+  rmarkdown::render("R/monthly_performance.rmd",output_dir=paste0(getwd(),"/reports/"))
 }
 
 agency_reports <- function() {
@@ -28,8 +26,8 @@ agency_reports <- function() {
                          "human_services")
   )
   for (i in 1:nrow(reports_to_run)) {
-    rmarkdown::render("R\\agency_report.rmd",
-                      output_dir=paste0(getwd(),"\\reports\\"),
+    rmarkdown::render("R/agency_report.rmd",
+                      output_dir=paste0(getwd(),"/reports/"),
                       output_file=paste0("Agency_Report_",
                                          reports_to_run[i,]$report_name,
                                          ".html"),

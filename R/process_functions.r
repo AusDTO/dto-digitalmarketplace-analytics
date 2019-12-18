@@ -52,7 +52,7 @@ process_sellers <- function(sellers) {
   return(sellers)
 }
 
-process_briefs <- function(b, buy, update_gs=TRUE) {
+process_briefs <- function(last_briefs, briefsExtract, buyers) {
   
   # fetch the buyer details for an individual brief
   fetchBuyer <- function(i,df) {
@@ -70,29 +70,10 @@ process_briefs <- function(b, buy, update_gs=TRUE) {
     NULL
   }
   
-  # adds a column with the name of the role where this is one of the frequent_roles
-  # NOT YET BUILT - IGNORE THIS
-  add_role_name_to_brief <- function(briefs) {
-    # calc edit distances for a role name
-    edit_distances <- function()
-    distances <- lapply(frequent_roles$search,edit_distances)
-  }
-  
-  sheet_name  <- 'allBriefs'
-  ## Update the briefs Google Sheet
-  briefsSheet <- gs_title(sheet_name)
-  # identify the last updated worksheet
-  ws          <- briefsSheet %>% gs_ws_ls()
-  temp        <- as.Date(ws)
-  temp        <- temp[!is.na(temp)]
-  lastUpdate  <- max(temp)
-  # read the last worksheet
-  lastBriefs  <- briefsSheet %>% gs_read(ws = as.character(lastUpdate))
-  sc          <- c("id","buyerID","buyerName","buyerEmail", "teamID")
-  lastBriefs  <- lastBriefs[,sc]
-  lastBriefs$teamID <- as.integer(lastBriefs$teamID)
+  last_briefs  <- last_briefs[,c("id","buyerID","buyerName","buyerEmail", "teamID")]
+
   # merge the additional columns
-  updatedBriefs <- merge(b,lastBriefs,by.x="id",by.y="id",all.x=TRUE)
+  updatedBriefs <- left_join(briefsExtract,last_briefs, by = "id")
   
   if (sum(is.na(updatedBriefs$buyerID) > 0)) {
     x <- bind_rows(lapply(updatedBriefs[is.na(updatedBriefs$buyerID),"id"],
@@ -116,7 +97,7 @@ process_briefs <- function(b, buy, update_gs=TRUE) {
       select(-buyerID, -buyerName, -buyerEmail, -teamID) %>% 
       left_join(allBuyers, by = "id")
   }
-  buy <- buy[,c("id","email_domain","category","agencyName","reports","entities")]
+  buy <- buyers[,c("id","email_domain","category","agencyName","reports","entities")]
   
   updatedBriefs <- left_join(updatedBriefs,buy,by=c("buyerID" = "id"))
   
@@ -124,17 +105,13 @@ process_briefs <- function(b, buy, update_gs=TRUE) {
     x <- updatedBriefs %>% 
       filter(is.na(entities), !is.na(teamID)) %>% 
       pull(teamID)
-    if (nrow(x) > 0) {
+    if (length(x) > 0) {
       print(x)
       stop("Missing 1 of more team IDs")
     }
   }
   
   attr(updatedBriefs,"timestamp") <- Sys.time()
-    # write back to the spreadsheet
-  if (update_gs) {
-    write_new_sheet(sheet_name,updatedBriefs,is_verbose = TRUE)
-  }
   return(updatedBriefs)
 }
 

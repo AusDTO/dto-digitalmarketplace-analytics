@@ -149,6 +149,88 @@ update_jira_tickets <- function() {
   return(j_tickets)
 }
 
+# loads the local copy of the agencies file. Checks if there are any missing agencies
+# If no missing agencies, returns the agencies data frame
+# If missing agencies, calls update_agencies() to manually add the details of those agencies
+load_update_agencies <- function(users) {
+  a             <- read_reference("agencies.csv")
+  buyer_domains <- users %>% 
+    filter(role == "buyer") %>% 
+    pull(email_domain) %>% 
+    unique()
+  if (sum(!buyer_domains %in% a$email_domain)) {
+    print("Missing buyers in the Agencies file. Add details in the editor for these agencies:")
+    print(buyer_domains[!buyer_domains %in% a$email_domain])
+    update_agencies()
+  } else {
+    a
+  }
+}
+
+# loads the last extracts file from file. If the last response is more than 7 days ago, 
+# will reextract all records
+load_update_brief_responses <- function(briefs, force_update = FALSE) {
+  latest <- list.files(path = paste0(getwd(), rel_path_data()), 
+                       pattern = "briefResponses") %>% 
+    str_sub(1,10) %>% 
+    as.Date() %>% 
+    max(na.rm = TRUE)
+  bR <- ready(paste0(latest,"-briefResponses.csv")) %>% 
+    mutate(applicationDate = as.Date(applicationDate))
+  last_response <- max(bR$applicationDate, na.rm = TRUE)
+  if (as.integer(Sys.Date() - last_response) > 7 | force_update) {
+    print(paste("Last brief response was",last_response, "- extracting the latest records"))
+    extract_brief_responses() %>% process_brief_responses(briefs)
+  } else {
+    bR
+  }
+}
+
+# loads the last extracts file from file. If the last response is more than 7 days ago, 
+# will reextract all records
+load_update_applications <- function(force_update = FALSE) {
+  latest <- list.files(path = paste0(getwd(), rel_path_data()), 
+                       pattern = "apps") %>% 
+    str_sub(1,10) %>% 
+    as.Date() %>% 
+    max(na.rm = TRUE)
+  a <- ready(paste0(latest,"-apps.csv")) %>% 
+    mutate(last_update_time = as.Date(last_update_time))
+  last_update <- max(a$last_update_time, na.rm = TRUE)
+  if (force_update | as.integer(Sys.Date() - last_update) > 7) {
+    print(paste("Last application update was",last_update, "- extracting the latest records"))
+    extract_applications()
+  } else {
+    a
+  }
+}
+
+update_agencies <- function() {
+  ag        <- read_reference("agencies.csv") 
+  ag_update <- edit(ag)
+  x         <- readline("Update the Agencies reference file? Y/N")
+  if (x %in% c("Y", "y", "Yes", "yes")) {
+    print("Saving agencies file ...")
+    save_reference(ag_update, "agencies.csv")
+    ag_update
+  } else {
+    print("Abandoning any updates ...")
+    ag
+  }
+}
+
+# loads the latest briefs file in /data to use as a reference for buyer information 
+# in the briefs data frame
+load_last_briefs <- function() {
+  latest <- list.files(path = paste0(getwd(), rel_path_data()), 
+                      pattern = "briefs") %>% 
+    str_sub(1,10) %>% 
+    as.Date() %>% 
+    max(na.rm = TRUE)
+  print(paste("Loading the last briefs file, dated",latest))
+  ready(paste0(latest, "-briefs.csv"))
+}
+
 #update_summary_stats <- function() {
 #  generate_summary_stats_table(summary_stats)
 #  savey("DMP_Stats", summary_stats)

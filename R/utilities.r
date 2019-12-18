@@ -39,15 +39,25 @@ frequent_roles <- tibble(
                   )
 
 log_filename     <- "MKT_reporting_log.csv"
+
 # this can vary if scripts are run from different directories - especially likely for RMD
 # tests to see if the current WD is /R or /scratch
 rel_path_data    <- function() {
   if (str_detect(getwd(),"R|(scratch)$")) {
-    return("\\..\\..\\data\\")
+    return("/../../data/")
   }
-  "\\..\\data\\"
+  "/../data/"
 }
-rel_path_reports <- "\\reports\\"
+
+# gets the relative path to the directory with reference files
+rel_path_reference    <- function() {
+  if (str_detect(getwd(),"R|(scratch)$")) {
+    return("/../../reference_data/")
+  }
+  "/../reference_data/"
+}
+
+rel_path_reports <- "/reports/"
 attachments_introduced <- as.Date("2017-04-04")
 dmp_sons         <- c("SON3413842","SON3364729")
 
@@ -89,6 +99,7 @@ header <- function() {
 setup_keyring <- function() {
   keyring_create("mkt") 
   key_set("dmp_api", keyring = "mkt")
+  key_set("dmp_x_api", keyring = "mkt")
   key_set("jira", keyring = "mkt")
   key_set("jira-login", keyring = "mkt")
   key_set("slack-support-webhook", keyring = "mkt")
@@ -131,8 +142,12 @@ send_slack_notification_marketplace_team <- function(message) {
 # API interface functions
 
 # gets content from an API
-fetchFromAPI <- function(getURL,auth,returnRaw=FALSE) {
-  getdata<-GET(url=getURL, add_headers(Authorization=auth))
+fetchFromAPI <- function(getURL,auth,returnRaw=FALSE, api_version = 1) {
+  if (api_version == 1) {
+    getdata<-GET(url=getURL, add_headers(Authorization=auth))
+  } else {
+    getdata<-GET(url=getURL, add_headers(`X-Api-Key`=auth))
+  }
   raw <- fromJSON(content(getdata,type="text",encoding="UTF-8"))
   # Assume return is a list of 2 length. One of these is content, the other has links
   # just want the one with content, so reject the one that contains raw[[]]$self
@@ -211,6 +226,16 @@ ready <- function(filename,rel_path=rel_path_data()) {
   read.csv(paste0(getwd(),rel_path,filename),stringsAsFactors = F)
 }
 
+# Read from the reference data files
+read_reference <- function(filename, rel_path=rel_path_reference()) {
+  read.csv(paste0(getwd(), rel_path, filename), stringsAsFactors = F)
+}
+
+save_reference <- function(x, filename, rel_path=rel_path_reference()) {
+  write.csv(x, 
+            file             = paste0(getwd(), rel_path, filename),
+            row.names        = FALSE)
+}
 
 # writes a data frame to the reporting directory so thy can be accessed through the mkt-reporting
 # web server

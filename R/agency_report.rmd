@@ -40,7 +40,7 @@ if (!exists("buyers")) {
 run date: `r date_to_string(Sys.Date())`  
 
 ```{r, echo = FALSE, message = FALSE}
-ref_domain    <- gs_title("ref-domains") %>% gs_read(ws = "agencies")
+ref_domain    <- agencies
 email_domains <- tibble(
       email_domain = str_trim(unlist(str_split(params$agency,"\\,")))
                       ) %>% 

@@ -374,8 +374,19 @@ extract_briefs  <- function(header, return_all = FALSE, cache = NULL) {
   return(briefsRaw[briefsRaw$status %in% c("closed","live", "withdrawn"),])
 }
 
+extract_briefs_summary <- function() {
+  bs_url <- prod_api("2/reports/brief/published")
+  bs_raw <- fetchFromAPI(bs_url, 
+                         auth = key_get("dmp_x_api", keyring = "mkt"), 
+                         api_version = 2)
+  bs_raw %>% mutate(published_at = parse_utc_timestamp_date(published_at),
+                    withdrawn_at = parse_utc_timestamp_date(withdrawn_at),
+                    openTo       = as.factor(translate_open_to(openTo))
+             )
+}
+
 #-------------------------------------------------------------------------------------------
-extract_brief_responses <- function(header, cache = NULL) {
+extract_brief_responses <- function(cache = NULL) {
   
   removeBlankLines <- function(x) {
     x <- gsub("\r","",x)
@@ -486,7 +497,7 @@ extract_brief_responses <- function(header, cache = NULL) {
 
 #-------------------------------------------------------------------------------------------
 # extract applications
-extract_applications <- function(header, cache = NULL) {
+extract_applications <- function(cache = NULL) {
 
   logicals <- c("agreed_to_master_agreement","regional","sme","indigenous","start_up","female_owned",
                 "lgbtqi_owned","nfp_social_enterprise","disability",
@@ -997,7 +1008,7 @@ extract_exceptions <- function() {
                  "character","character","Date","Date","Date","integer","numeric","numeric",
                  "numeric","numeric","numeric","numeric","numeric","numeric","numeric","numeric",
                  "numeric","numeric","character","logical")
-  read.csv(paste0(getwd(),rel_path_data(),"seller_exceptions.csv"),colClasses = c_classes)
+  read.csv(paste0(getwd(),rel_path_reference(),"seller_exceptions.csv"),colClasses = c_classes)
 }
 
 #-------------------------------------------------------------------------------------------
@@ -1068,7 +1079,7 @@ extract_jira_tickets <- function(cache = NULL) {
                                "?jql=project=MARADMIN&maxResults=100",
                                "&&expand=changelog")
     j_token        <- paste("Basic",
-                            base64_enc(paste0(Sys.getenv("jira_login"),":",
+                            base64_enc(paste0(key_get("jira_login"),":",
                                               key_get("jira",keyring = "mkt"))))
     tick_fetch_get <- GET(url_get,add_headers(Authorization=j_token))
     raw            <- fromJSON(content(tick_fetch_get,type="text",encoding="UTF-8"))
